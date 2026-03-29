@@ -3,18 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "@tanstack/react-form";
-import { GraduationCap, Eye, EyeOff, Loader2, CheckCircle2 } from "lucide-react";
+import {
+  GraduationCap,
+  Eye,
+  EyeOff,
+  Loader2,
+  CheckCircle2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { registerApi } from "@/lib/auth";
-
-const ROLES = [
-  { value: "Student", label: "学生" },
-  { value: "Teacher", label: "讲师" },
-  { value: "Admin", label: "管理员" },
-];
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -27,17 +27,21 @@ export default function RegisterPage() {
       username: "",
       email: "",
       password: "",
-      role: "Student",
       real_name: "",
     },
     onSubmit: async ({ value }) => {
       setServerError(null);
       try {
-        await registerApi(value);
+        await registerApi({
+          ...value,
+          role: "Student",
+        });
         setSuccess(true);
         setTimeout(() => router.push("/login"), 1800);
       } catch (err) {
-        setServerError(err instanceof Error ? err.message : "注册失败，请稍后重试");
+        setServerError(
+          err instanceof Error ? err.message : "注册失败，请稍后重试",
+        );
       }
     },
   });
@@ -71,15 +75,23 @@ export default function RegisterPage() {
             <GraduationCap size={22} className="text-white" />
           </div>
           <div>
-            <span className="text-xl font-bold text-gray-900">趣学内卷</span>
-            <span className="ml-1.5 text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">微课平台</span>
+            <span className="text-xl font-bold text-gray-900">微光智造</span>
+            <span className="ml-1.5 text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+              微课平台
+            </span>
           </div>
         </div>
 
         <Card className="border-gray-100 shadow-lg shadow-gray-100/50">
           <CardHeader className="pb-4 pt-6 px-8">
             <h1 className="text-xl font-bold text-gray-900">创建账号</h1>
-            <p className="text-sm text-gray-500 mt-1">加入我们，开启你的学习之旅</p>
+            <p className="text-sm text-gray-500 mt-1">
+              加入我们，开启你的学习之旅
+            </p>
+            <p className="mt-3 rounded-lg border border-blue-100 bg-blue-50/80 px-3 py-2 text-xs leading-relaxed text-blue-900/90">
+              新注册用户均为<strong className="font-semibold">学员</strong>
+              。如需成为讲师，须由管理员审核并开通权限后方可使用。
+            </p>
           </CardHeader>
 
           <CardContent className="px-8 pb-8">
@@ -98,13 +110,16 @@ export default function RegisterPage() {
                     !value.trim()
                       ? "请输入用户名"
                       : value.length < 3
-                      ? "用户名至少 3 个字符"
-                      : undefined,
+                        ? "用户名至少 3 个字符"
+                        : undefined,
                 }}
               >
                 {(field) => (
                   <div className="space-y-1.5">
-                    <Label htmlFor={field.name} className="text-sm font-medium text-gray-700">
+                    <Label
+                      htmlFor={field.name}
+                      className="text-sm font-medium text-gray-700"
+                    >
                       用户名 <span className="text-red-400">*</span>
                     </Label>
                     <Input
@@ -118,7 +133,9 @@ export default function RegisterPage() {
                       className={`h-10 ${field.state.meta.errors.length > 0 ? "border-red-400 focus-visible:ring-red-200" : "focus-visible:ring-blue-200 focus-visible:border-blue-400"}`}
                     />
                     {field.state.meta.errors.length > 0 && (
-                      <p className="text-xs text-red-500">{field.state.meta.errors[0]?.toString()}</p>
+                      <p className="text-xs text-red-500">
+                        {field.state.meta.errors[0]?.toString()}
+                      </p>
                     )}
                   </div>
                 )}
@@ -128,12 +145,16 @@ export default function RegisterPage() {
               <form.Field
                 name="real_name"
                 validators={{
-                  onChange: ({ value }) => (!value.trim() ? "请输入真实姓名" : undefined),
+                  onChange: ({ value }) =>
+                    !value.trim() ? "请输入真实姓名" : undefined,
                 }}
               >
                 {(field) => (
                   <div className="space-y-1.5">
-                    <Label htmlFor={field.name} className="text-sm font-medium text-gray-700">
+                    <Label
+                      htmlFor={field.name}
+                      className="text-sm font-medium text-gray-700"
+                    >
                       真实姓名 <span className="text-red-400">*</span>
                     </Label>
                     <Input
@@ -147,7 +168,9 @@ export default function RegisterPage() {
                       className={`h-10 ${field.state.meta.errors.length > 0 ? "border-red-400 focus-visible:ring-red-200" : "focus-visible:ring-blue-200 focus-visible:border-blue-400"}`}
                     />
                     {field.state.meta.errors.length > 0 && (
-                      <p className="text-xs text-red-500">{field.state.meta.errors[0]?.toString()}</p>
+                      <p className="text-xs text-red-500">
+                        {field.state.meta.errors[0]?.toString()}
+                      </p>
                     )}
                   </div>
                 )}
@@ -159,14 +182,18 @@ export default function RegisterPage() {
                 validators={{
                   onChange: ({ value }) => {
                     if (!value.trim()) return "请输入邮箱地址";
-                    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return "请输入有效的邮箱地址";
+                    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
+                      return "请输入有效的邮箱地址";
                     return undefined;
                   },
                 }}
               >
                 {(field) => (
                   <div className="space-y-1.5">
-                    <Label htmlFor={field.name} className="text-sm font-medium text-gray-700">
+                    <Label
+                      htmlFor={field.name}
+                      className="text-sm font-medium text-gray-700"
+                    >
                       邮箱 <span className="text-red-400">*</span>
                     </Label>
                     <Input
@@ -181,7 +208,9 @@ export default function RegisterPage() {
                       className={`h-10 ${field.state.meta.errors.length > 0 ? "border-red-400 focus-visible:ring-red-200" : "focus-visible:ring-blue-200 focus-visible:border-blue-400"}`}
                     />
                     {field.state.meta.errors.length > 0 && (
-                      <p className="text-xs text-red-500">{field.state.meta.errors[0]?.toString()}</p>
+                      <p className="text-xs text-red-500">
+                        {field.state.meta.errors[0]?.toString()}
+                      </p>
                     )}
                   </div>
                 )}
@@ -195,13 +224,16 @@ export default function RegisterPage() {
                     !value
                       ? "请输入密码"
                       : value.length < 6
-                      ? "密码至少 6 位"
-                      : undefined,
+                        ? "密码至少 6 位"
+                        : undefined,
                 }}
               >
                 {(field) => (
                   <div className="space-y-1.5">
-                    <Label htmlFor={field.name} className="text-sm font-medium text-gray-700">
+                    <Label
+                      htmlFor={field.name}
+                      className="text-sm font-medium text-gray-700"
+                    >
                       密码 <span className="text-red-400">*</span>
                     </Label>
                     <div className="relative">
@@ -221,37 +253,18 @@ export default function RegisterPage() {
                         onClick={() => setShowPassword(!showPassword)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                       >
-                        {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                        {showPassword ? (
+                          <EyeOff size={15} />
+                        ) : (
+                          <Eye size={15} />
+                        )}
                       </button>
                     </div>
                     {field.state.meta.errors.length > 0 && (
-                      <p className="text-xs text-red-500">{field.state.meta.errors[0]?.toString()}</p>
+                      <p className="text-xs text-red-500">
+                        {field.state.meta.errors[0]?.toString()}
+                      </p>
                     )}
-                  </div>
-                )}
-              </form.Field>
-
-              {/* Role */}
-              <form.Field name="role">
-                {(field) => (
-                  <div className="space-y-1.5">
-                    <Label className="text-sm font-medium text-gray-700">角色</Label>
-                    <div className="flex gap-2">
-                      {ROLES.map(({ value, label }) => (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => field.handleChange(value)}
-                          className={`flex-1 py-2 text-sm font-medium rounded-lg border transition-all ${
-                            field.state.value === value
-                              ? "bg-blue-50 border-blue-400 text-blue-700"
-                              : "bg-white border-gray-200 text-gray-600 hover:border-blue-300 hover:text-blue-600"
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 )}
               </form.Field>
@@ -286,7 +299,10 @@ export default function RegisterPage() {
 
             <div className="mt-6 text-center text-sm text-gray-500">
               已有账号？{" "}
-              <a href="/login" className="text-blue-600 hover:text-blue-800 font-medium">
+              <a
+                href="/login"
+                className="text-blue-600 hover:text-blue-800 font-medium"
+              >
                 立即登录
               </a>
             </div>
@@ -295,9 +311,13 @@ export default function RegisterPage() {
 
         <p className="text-center text-xs text-gray-400 mt-6">
           注册即表示你同意我们的{" "}
-          <a href="#" className="text-blue-500 hover:underline">服务条款</a>{" "}
+          <a href="#" className="text-blue-500 hover:underline">
+            服务条款
+          </a>{" "}
           和{" "}
-          <a href="#" className="text-blue-500 hover:underline">隐私政策</a>
+          <a href="#" className="text-blue-500 hover:underline">
+            隐私政策
+          </a>
         </p>
       </div>
     </div>

@@ -141,3 +141,18 @@
   height: 100% !important;
   object-fit: contain;
 }
+
+/* 正在播放音频条动画 */
+@keyframes nowplaying {
+  0%, 100% { transform: scaleY(0.4); }
+  50%       { transform: scaleY(1); }
+}
+
+/* 首页横滑区域：隐藏滚动条（与 stitch 模板一致） */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

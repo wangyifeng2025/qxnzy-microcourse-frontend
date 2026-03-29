@@ -3,6 +3,7 @@ export interface LoginPayload {
   password: string;
 }
 
+/** 公开注册页固定为 Student；Teacher/Admin 由管理员在后台创建或调整角色 */
 export interface RegisterPayload {
   username: string;
   email: string;

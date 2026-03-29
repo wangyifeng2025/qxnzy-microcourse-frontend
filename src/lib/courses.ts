@@ -19,25 +19,100 @@ export interface CoursesResponse {
   items: Course[];
 }
 
-// Server-side: direct backend; client-side: Next.js rewrite proxy
+// Server-side: direct backend; client-side: Next.js rewrite proxy（见 next.config rewrites）
 const API_BASE =
-  typeof window === "undefined" ? "http://127.0.0.1:8080" : "";
+  typeof window === "undefined"
+    ? process.env.BACKEND_URL ?? "http://127.0.0.1:8080"
+    : "";
 
+async function parseErrorDetail(res: Response): Promise<string> {
+  try {
+    const errBody = (await res.json()) as {
+      message?: string;
+      detail?: string;
+      error?: string;
+    };
+    return (
+      errBody.message ?? errBody.detail ?? errBody.error ?? ""
+    ).trim();
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * GET /api/courses — 仅已发布课程，公开访问，不要带 Authorization。
+ */
 export async function fetchCourses(
   pageSize = 20,
-  cursor?: { created_at: string; id: string }
+  cursor?: { created_at: string; id: string },
 ): Promise<CoursesResponse> {
   const params = new URLSearchParams({ page_size: String(pageSize) });
   if (cursor) {
     params.set("cursor_created_at", cursor.created_at);
     params.set("cursor_id", cursor.id);
   }
-  const res = await fetch(`${API_BASE}/api/courses?${params}`, {
-    next: { revalidate: 60 },
-  });
-  if (!res.ok) throw new Error(`获取课程列表失败: ${res.status}`);
+  const fetchInit: RequestInit = {
+    /** 公开列表会随发布变化，禁用 Data Cache，避免发布后首页仍显示旧列表 */
+    cache: "no-store",
+  };
+
+  const res = await fetch(`${API_BASE}/api/courses?${params}`, fetchInit);
+  if (!res.ok) {
+    const detail = await parseErrorDetail(res);
+    throw new Error(
+      detail
+        ? `获取课程列表失败: ${res.status} — ${detail}`
+        : `获取课程列表失败: ${res.status}`,
+    );
+  }
   return res.json() as Promise<CoursesResponse>;
 }
+
+export type FetchManageCoursesOptions = {
+  token: string;
+};
+
+/**
+ * GET /api/courses/manage — 教师看自己全部状态课程，管理员看全站；需登录且角色为教师或管理员。
+ */
+export async function fetchManageCourses(
+  options: FetchManageCoursesOptions,
+  pageSize = 20,
+  cursor?: { created_at: string; id: string },
+): Promise<CoursesResponse> {
+  const params = new URLSearchParams({ page_size: String(pageSize) });
+  if (cursor) {
+    params.set("cursor_created_at", cursor.created_at);
+    params.set("cursor_id", cursor.id);
+  }
+  const isServer = typeof window === "undefined";
+  const headers = new Headers();
+  headers.set("Authorization", `Bearer ${options.token}`);
+
+  const fetchInit: RequestInit = { headers };
+  if (isServer) {
+    fetchInit.next = { revalidate: 0 };
+  } else {
+    fetchInit.cache = "no-store";
+  }
+
+  const res = await fetch(`${API_BASE}/api/courses/manage?${params}`, fetchInit);
+  if (!res.ok) {
+    const detail = await parseErrorDetail(res);
+    throw new Error(
+      detail
+        ? `获取管理端课程列表失败: ${res.status} — ${detail}`
+        : `获取管理端课程列表失败: ${res.status}`,
+    );
+  }
+  return res.json() as Promise<CoursesResponse>;
+}
+
+export type FetchWithAuthOptions = {
+  /** 未发布课程需本人教师或管理员带 Bearer，否则后端 404 */
+  token?: string | null;
+};
 
 export interface Chapter {
   id: string;
@@ -49,10 +124,20 @@ export interface Chapter {
   updated_at: string;
 }
 
-export async function fetchChapters(courseId: string): Promise<Chapter[]> {
-  const res = await fetch(`${API_BASE}/api/courses/${courseId}/chapters`, {
-    next: { revalidate: 60 },
-  });
+export async function fetchChapters(
+  courseId: string,
+  options?: FetchWithAuthOptions,
+): Promise<Chapter[]> {
+  const headers = new Headers();
+  if (options?.token) {
+    headers.set("Authorization", `Bearer ${options.token}`);
+  }
+  /** 必须与后端「未发布需鉴权」一致，禁用 Data Cache，避免缓存到旧的 200 */
+  const fetchInit: RequestInit = { headers, cache: "no-store" };
+  const res = await fetch(
+    `${API_BASE}/api/courses/${courseId}/chapters`,
+    fetchInit,
+  );
   if (!res.ok) throw new Error(`获取章节列表失败: ${res.status}`);
   return res.json() as Promise<Chapter[]>;
 }
@@ -72,10 +157,19 @@ export interface Video {
   updated_at: string;
 }
 
-export async function fetchVideos(chapterId: string): Promise<Video[]> {
-  const res = await fetch(`${API_BASE}/api/chapters/${chapterId}/videos`, {
-    next: { revalidate: 60 },
-  });
+export async function fetchVideos(
+  chapterId: string,
+  options?: FetchWithAuthOptions,
+): Promise<Video[]> {
+  const headers = new Headers();
+  if (options?.token) {
+    headers.set("Authorization", `Bearer ${options.token}`);
+  }
+  const fetchInit: RequestInit = { headers, cache: "no-store" };
+  const res = await fetch(
+    `${API_BASE}/api/chapters/${chapterId}/videos`,
+    fetchInit,
+  );
   if (!res.ok) throw new Error(`获取视频列表失败: ${res.status}`);
   return res.json() as Promise<Video[]>;
 }
@@ -86,10 +180,17 @@ export function formatDuration(seconds: number): string {
   return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
 }
 
-export async function fetchCourse(id: string): Promise<Course> {
-  const res = await fetch(`${API_BASE}/api/courses/${id}`, {
-    next: { revalidate: 60 },
-  });
+export async function fetchCourse(
+  id: string,
+  options?: FetchWithAuthOptions,
+): Promise<Course> {
+  const headers = new Headers();
+  if (options?.token) {
+    headers.set("Authorization", `Bearer ${options.token}`);
+  }
+  /** 未登录访问未发布课程时后端 404；禁用 fetch 缓存，否则会长期命中历史 200 */
+  const fetchInit: RequestInit = { headers, cache: "no-store" };
+  const res = await fetch(`${API_BASE}/api/courses/${id}`, fetchInit);
   if (res.status === 404) throw new Error("COURSE_NOT_FOUND");
   if (!res.ok) throw new Error(`获取课程详情失败: ${res.status}`);
   return res.json() as Promise<Course>;

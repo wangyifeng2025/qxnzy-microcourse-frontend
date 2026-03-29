@@ -1,523 +1,426 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  Search,
-  GraduationCap,
-  Play,
   BookOpen,
   AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  Users,
+  ArrowRight,
+  Zap,
+  ExternalLink,
 } from "lucide-react";
-import CourseCard from "@/components/course-card";
 import TopNav from "@/components/top-nav";
-import { getCoverGradient, STATUS_LABEL, type Course } from "@/lib/courses";
+import { getCoverGradient, type Course } from "@/lib/courses";
 import { cn } from "@/lib/utils";
 
-/* ── Constants ──────────────────────────────────────────── */
+/* stitch 风格色板近似值 */
+const surface = "bg-[#f9f9fc]";
+const surfaceLow = "bg-[#eeeef0]";
+const surfaceLowest = "bg-white";
+const onSurface = "text-[#1a1c1e]";
+const onSurfaceVariant = "text-[#424654]";
+const primary = "#0040a1";
+const tertiary = "#872200";
 
-const TABS = [
-  { id: "discover", label: "发现" },
-  { id: "all", label: "全部课程" },
-  { id: "published", label: "已发布" },
-  { id: "inprogress", label: "进行中" },
-] as const;
-type TabId = (typeof TABS)[number]["id"];
-
-const COURSE_TYPES = [
-  { id: "short", label: "短视频课", sub: "1-2 小时" },
-  { id: "course", label: "系列课程", sub: "3-10 小时" },
-  { id: "cert", label: "专题认证", sub: "10+ 小时" },
+const CATEGORY_POOL = [
+  "编程开发",
+  "数据科学",
+  "工程基础",
+  "设计创意",
+  "职业成长",
+  "通识素养",
 ];
 
-const DIFFICULTIES = ["入门", "初级", "中级", "高级"];
+function categoryForCourse(id: string): string {
+  let n = 0;
+  for (let i = 0; i < id.length; i++) n = (n + id.charCodeAt(i)) % 997;
+  return CATEGORY_POOL[n % CATEGORY_POOL.length];
+}
 
-const TOPICS = [
-  { label: "编程开发", count: 41 },
-  { label: "数据科学", count: 28 },
-  { label: "AI / 机器学习", count: 23 },
-  { label: "前端工程", count: 19 },
-  { label: "后端架构", count: 15 },
-  { label: "产品设计", count: 11 },
-  { label: "算法与数据结构", count: 9 },
-  { label: "云计算", count: 8 },
-  { label: "移动开发", count: 7 },
-  { label: "网络安全", count: 5 },
-];
-
-/* ── Main Component ─────────────────────────────────────── */
+function pseudoLearners(id: string): number {
+  let n = 0;
+  for (let i = 0; i < id.length; i++) n = (n * 31 + id.charCodeAt(i)) >>> 0;
+  return 20 + (n % 180);
+}
 
 interface HomeContentProps {
   courses: Course[];
   error: string | null;
+  /** 来自 URL `?q=`，与其它页顶栏搜索回车跳转对齐 */
+  initialSearchQuery?: string;
 }
 
-export default function HomeContent({ courses, error }: HomeContentProps) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<TabId>("discover");
-  const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
-  const [selectedDiffs, setSelectedDiffs] = useState<string[]>([]);
-  const [selectedTopics, setSelectedTopics] = useState<string[]>([]);
-  const [heroIndex, setHeroIndex] = useState(0);
+export default function HomeContent({
+  courses,
+  error,
+  initialSearchQuery = "",
+}: HomeContentProps) {
+  const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
+  const popularRef = useRef<HTMLDivElement>(null);
 
-  const publishedCourses = courses.filter((c) => c.status === "Published");
-  const heroCandidates = publishedCourses.length > 0 ? publishedCourses : courses;
+  const publishedCourses = useMemo(
+    () => courses.filter((c) => c.status === "Published"),
+    [courses],
+  );
+  const listSource = publishedCourses.length > 0 ? publishedCourses : courses;
 
-  // Cycle hero every 5 s
-  useEffect(() => {
-    if (heroCandidates.length <= 1) return;
-    const t = setInterval(
-      () => setHeroIndex((i) => (i + 1) % heroCandidates.length),
-      5000
-    );
-    return () => clearInterval(t);
-  }, [heroCandidates.length]);
-
-  const heroSource = heroCandidates[heroIndex] ?? null;
+  const popularList = useMemo(() => listSource.slice(0, 8), [listSource]);
 
   const filteredCourses = useMemo(() => {
-    let list = [...courses];
-    if (activeTab === "published") list = list.filter((c) => c.status === "Published");
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      list = list.filter(
-        (c) =>
-          c.title.toLowerCase().includes(q) ||
-          c.description?.toLowerCase().includes(q)
-      );
-    }
-    return list;
-  }, [courses, activeTab, searchQuery]);
+    if (!searchQuery.trim()) return listSource;
+    const q = searchQuery.toLowerCase();
+    return listSource.filter(
+      (c) =>
+        c.title.toLowerCase().includes(q) ||
+        (c.description?.toLowerCase().includes(q) ?? false),
+    );
+  }, [listSource, searchQuery]);
 
-  const topRated = filteredCourses.slice(0, 4);
-  const justAdded = [...filteredCourses].reverse().slice(0, 4);
+  const scrollPopular = (dir: -1 | 1) => {
+    const el = popularRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir * 420, behavior: "smooth" });
+  };
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* ── Top Navbar ───────────────────────────────────── */}
-      <TopNav />
+    <div className={cn("min-h-screen", surface, onSurface)}>
+      <TopNav
+        embeddedSearch={{
+          value: searchQuery,
+          onChange: setSearchQuery,
+          placeholder: "搜索课程大纲、关键词…",
+        }}
+      />
 
-      {/* ── Hero ─────────────────────────────────────────── */}
-      {heroSource && (
-        <HeroSection
-          course={heroSource}
-          total={heroCandidates.length}
-          current={heroIndex}
-          onDotClick={setHeroIndex}
-        />
-      )}
-
-      {/* ── Tabs ─────────────────────────────────────────── */}
-      <div className="border-b border-gray-200 bg-white sticky top-[57px] z-10">
-        <div className="max-w-7xl mx-auto px-6 flex items-center gap-0">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "px-5 py-3.5 text-sm font-medium border-b-2 transition-colors",
-                activeTab === tab.id
-                  ? "border-blue-600 text-blue-700"
-                  : "border-transparent text-gray-500 hover:text-gray-900"
-              )}
-            >
-              {tab.label}
-              {tab.id === "inprogress" && (
-                <span className="ml-1.5 text-[11px] font-bold bg-gray-200 text-gray-600 rounded-full px-1.5 py-0.5">
-                  0
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Content ──────────────────────────────────────── */}
-      <div className="max-w-7xl mx-auto px-6 py-8 flex gap-8 items-start">
-        {/* Filter Panel */}
-        <aside className="w-56 shrink-0 space-y-6">
-          {/* Search */}
-          <div className="relative">
-            <Search
-              size={14}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-            />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索课程..."
-              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 bg-white"
-            />
+      <main className="pb-0 pt-6 md:pt-8">
+        {/* 热门课程：横向滚动 */}
+        <section className="px-4 md:px-8 lg:px-16 max-w-screen-2xl mx-auto">
+          <div className="flex items-baseline justify-between mb-8">
+            <h2 className="text-3xl font-extrabold tracking-tight text-[#1a1c1e]">
+              热门课程
+            </h2>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => scrollPopular(-1)}
+                className="p-2 rounded-full bg-[#f3f3f6] hover:bg-[#e8e8ea] transition-colors"
+                aria-label="上一组"
+              >
+                <ChevronLeft size={20} className="text-[#424654]" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollPopular(1)}
+                className="p-2 rounded-full bg-[#f3f3f6] hover:bg-[#e8e8ea] transition-colors"
+                aria-label="下一组"
+              >
+                <ChevronRight size={20} className="text-[#424654]" />
+              </button>
+            </div>
           </div>
 
-          {/* Course Type */}
-          <FilterGroup
-            title="课程类型"
-            hint
-            tooltip="按照课程长度分类"
-          >
-            <div className="space-y-2.5">
-              {COURSE_TYPES.map(({ id, label, sub }) => (
-                <label key={id} className="flex items-start gap-2.5 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 w-4 h-4 rounded border-gray-300 accent-blue-600 cursor-pointer"
-                    checked={selectedTypes.includes(id)}
-                    onChange={() =>
-                      setSelectedTypes((p) =>
-                        p.includes(id) ? p.filter((x) => x !== id) : [...p, id]
-                      )
-                    }
-                  />
-                  <div>
-                    <span className="text-sm text-gray-700 group-hover:text-gray-900 leading-none">
-                      {label}
-                    </span>
-                    <span className="block text-xs text-gray-400">{sub}</span>
-                  </div>
-                </label>
+          {popularList.length === 0 ? (
+            <p className={cn("text-sm pb-8", onSurfaceVariant)}>
+              暂无已发布课程，请稍后再来。
+            </p>
+          ) : (
+            <div
+              ref={popularRef}
+              className="flex gap-6 overflow-x-auto hide-scrollbar pb-8 -mx-4 px-4"
+            >
+              {popularList.map((course) => (
+                <PopularCourseCard key={course.id} course={course} />
               ))}
             </div>
-          </FilterGroup>
-
-          {/* Difficulty */}
-          <FilterGroup title="难度">
-            <div className="space-y-2.5">
-              {DIFFICULTIES.map((d) => (
-                <label key={d} className="flex items-center gap-2.5 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 rounded border-gray-300 accent-blue-600 cursor-pointer"
-                    checked={selectedDiffs.includes(d)}
-                    onChange={() =>
-                      setSelectedDiffs((p) =>
-                        p.includes(d) ? p.filter((x) => x !== d) : [...p, d]
-                      )
-                    }
-                  />
-                  <span className="text-sm text-gray-700 group-hover:text-gray-900">
-                    {d}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </FilterGroup>
-
-          {/* Popular Topics */}
-          <FilterGroup title="热门方向">
-            <div className="space-y-2">
-              {TOPICS.map(({ label, count }) => (
-                <label
-                  key={label}
-                  className="flex items-center justify-between cursor-pointer group"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <input
-                      type="checkbox"
-                      className="w-4 h-4 rounded border-gray-300 accent-blue-600 cursor-pointer"
-                      checked={selectedTopics.includes(label)}
-                      onChange={() =>
-                        setSelectedTopics((p) =>
-                          p.includes(label)
-                            ? p.filter((x) => x !== label)
-                            : [...p, label]
-                        )
-                      }
-                    />
-                    <span className="text-sm text-gray-700 group-hover:text-gray-900">
-                      {label}
-                    </span>
-                  </div>
-                  <span className="text-xs text-gray-400">{count}</span>
-                </label>
-              ))}
-            </div>
-          </FilterGroup>
-        </aside>
-
-        {/* Main Grid */}
-        <div className="flex-1 min-w-0 space-y-12">
-          {/* Error */}
-          {error && (
-            <div className="flex items-center gap-3 bg-red-50 border border-red-100 text-red-600 rounded-xl px-5 py-4 text-sm">
-              <AlertCircle size={16} className="shrink-0" />
-              {error}
-            </div>
           )}
+        </section>
 
-          {/* Empty */}
-          {!error && filteredCourses.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-24 text-center">
-              <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
-                <BookOpen size={28} className="text-gray-400" />
-              </div>
-              <p className="text-gray-700 font-semibold mb-1">暂无匹配课程</p>
-              <p className="text-sm text-gray-400">尝试修改搜索词或调整筛选条件</p>
+        {/* 主区：课程网格 + 社区侧栏 */}
+        <section className="px-4 md:px-8 lg:px-16 mt-8 md:mt-8 max-w-screen-2xl mx-auto flex flex-col xl:flex-row gap-12 items-start">
+          <div className="flex-1 min-w-0 w-full">
+            <div className="mb-10 md:mb-12">
+              <h2 className="text-3xl md:text-3xl font-extrabold tracking-tight mb-2 text-[#1a1c1e]">
+                可选课程
+              </h2>
+              <p className={cn("text-sm md:text-base", onSurfaceVariant)}>
+                面向现代学习者精选的精品微课，随时随地提升竞争力。
+              </p>
             </div>
-          )}
 
-          {/* Top Rated */}
-          {topRated.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="text-xl font-bold text-gray-900">好评优先</h2>
+            {error && (
+              <div className="flex items-center gap-3 bg-red-50 border border-red-100 text-red-600 rounded-xl px-5 py-4 text-sm mb-8">
+                <AlertCircle size={16} className="shrink-0" />
+                {error}
               </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {topRated.map((course, i) => (
-                  <CourseCard
-                    key={course.id}
-                    course={course}
-                    instructor={course.teacher_name ?? undefined}
-                    rating={4.8 - i * 0.1}
-                    views={`${(15 - i) * 200}`}
-                    isHot={i === 0}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
+            )}
 
-          {/* Just Added */}
-          {justAdded.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="text-xl font-bold text-gray-900">最新上线</h2>
+            {!error && filteredCourses.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-[#eeeef0] flex items-center justify-center mb-4">
+                  <BookOpen size={28} className="text-[#424654]/50" />
+                </div>
+                <p className="font-semibold text-[#1a1c1e] mb-1">
+                  暂无匹配课程
+                </p>
+                <p className="text-sm text-[#424654]">
+                  试试更换搜索词，或浏览上方热门推荐
+                </p>
               </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {justAdded.map((course, i) => (
-                  <CourseCard
-                    key={course.id}
-                    course={course}
-                    instructor={course.teacher_name ?? undefined}
-                    isNew={i < 2}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
+            )}
 
-          {/* All Courses */}
-          {filteredCourses.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between mb-5">
-                <h2 className="text-xl font-bold text-gray-900">
-                  全部课程
-                  <span className="ml-2 text-base font-normal text-gray-400">
-                    {filteredCourses.length} 门
-                  </span>
-                </h2>
-              </div>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {filteredCourses.length > 0 && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
                 {filteredCourses.map((course) => (
-                  <CourseCard
-                    key={course.id}
-                    course={course}
-                    instructor={course.teacher_name ?? undefined}
-                  />
+                  <CurriculumCard key={course.id} course={course} />
                 ))}
               </div>
-            </section>
-          )}
+            )}
+
+            {filteredCourses.length > 0 && (
+              <div className="mt-16 flex justify-center">
+                <button
+                  type="button"
+                  className="bg-[#e8e8ea] hover:bg-[#e2e2e5] text-[#1a1c1e] px-10 py-4 rounded-full font-bold text-sm transition-colors"
+                  onClick={() => {
+                    document
+                      .getElementById("home-more-courses-hint")
+                      ?.scrollIntoView({ behavior: "smooth" });
+                  }}
+                >
+                  探索更多课程
+                </button>
+              </div>
+            )}
+
+            <p
+              id="home-more-courses-hint"
+              className="mt-8 text-center text-xs text-[#424654]/70"
+            >
+              更多课程持续上架中，敬请期待。
+            </p>
+          </div>
+
+          {/* 加入社区侧栏 */}
+          <aside className="hidden xl:block w-80 shrink-0">
+            <div className={cn("sticky top-24 p-8 rounded-xl", surfaceLow)}>
+              <h3 className="text-xl font-extrabold mb-4 text-[#1a1c1e]">
+                加入学习社区
+              </h3>
+              <p className="text-sm text-[#424654] mb-8 leading-relaxed">
+                与数万学习者、讲师在专题小组中交流答疑、互助成长。
+              </p>
+              <div className="space-y-4 mb-8">
+                <div className="flex items-center gap-3 p-3 bg-white rounded-lg shadow-sm">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm">
+                    #
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold">微课设计</p>
+                    <p className="text-[10px] text-[#424654]">1.2 万成员</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 p-3 bg-white rounded-lg shadow-sm">
+                  <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-orange-700 font-bold text-sm">
+                    #
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold">备考与自习</p>
+                    <p className="text-[10px] text-[#424654]">8 千成员</p>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="w-full py-3 rounded-full font-bold text-sm text-white shadow-sm hover:scale-[0.98] transition-transform"
+                style={{
+                  background: `linear-gradient(135deg, ${primary} 0%, #0056d2 100%)`,
+                }}
+              >
+                进入交流区
+              </button>
+              <div className="mt-12 pt-8 border-t border-[#c3c6d6]/30">
+                <h4 className="text-[10px] font-black uppercase tracking-[0.15em] text-[#424654]/50 mb-4">
+                  活跃讲师
+                </h4>
+                <div className="flex -space-x-2">
+                  {["趣", "学", "卷"].map((ch, i) => (
+                    <div
+                      key={i}
+                      className="w-8 h-8 rounded-full border-2 border-[#eeeef0] bg-linear-to-br from-blue-500 to-sky-400 text-white text-[10px] font-bold flex items-center justify-center"
+                    >
+                      {ch}
+                    </div>
+                  ))}
+                  <div
+                    className="w-8 h-8 rounded-full border-2 border-[#eeeef0] text-[10px] font-bold flex items-center justify-center text-white"
+                    style={{ backgroundColor: "#0056d2" }}
+                  >
+                    +12
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </section>
+      </main>
+
+      <footer className="bg-slate-50 flex flex-col md:flex-row justify-between items-center px-4 md:px-16 w-full mt-20 py-12 border-t border-slate-100">
+        <div className="flex flex-col mb-8 md:mb-0 text-center md:text-left">
+          <span className="text-sm font-black text-slate-900 mb-2">
+            微光智造 · 微课
+          </span>
+          <p className="font-sans text-xs uppercase tracking-widest text-slate-500">
+            © {new Date().getFullYear()} 微光智造. 保留所有权利。
+          </p>
         </div>
-      </div>
+        <div className="flex flex-wrap justify-center gap-6 md:gap-12 font-sans text-xs uppercase tracking-widest text-slate-500">
+          <Link href="#" className="hover:text-slate-900 transition-colors">
+            关于我们
+          </Link>
+          <Link href="#" className="hover:text-slate-900 transition-colors">
+            服务条款
+          </Link>
+          <Link href="#" className="hover:text-slate-900 transition-colors">
+            隐私政策
+          </Link>
+          <Link href="#" className="hover:text-slate-900 transition-colors">
+            帮助中心
+          </Link>
+        </div>
+      </footer>
     </div>
   );
 }
 
+/* ── 热门横滑卡片 ── */
 
-/* ── Hero Section ───────────────────────────────────────── */
+function PopularCourseCard({ course }: { course: Course }) {
+  const cat = categoryForCourse(course.id);
+  const learners = pseudoLearners(course.id);
+  const k = (learners / 1000).toFixed(1);
 
-function HeroSection({
-  course,
-  total,
-  current,
-  onDotClick,
-}: {
-  course: Course;
-  total: number;
-  current: number;
-  onDotClick: (i: number) => void;
-}) {
-  const gradient = getCoverGradient(course.id);
-  const hasCover =
-    !!course.cover_image_url && !course.cover_image_url.includes("example.com");
-  const statusInfo = STATUS_LABEL[course.status] ?? STATUS_LABEL.Draft;
-
-  return (
-    <section className="bg-gray-50 border-b border-gray-200 px-6 py-8">
-      <div className="max-w-7xl mx-auto">
-        <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-4">
-          最热门
-        </h2>
-        <div className="flex gap-5 items-stretch">
-          {/* Large Featured Card */}
-          <div className="flex flex-1 rounded-2xl overflow-hidden shadow-sm border border-gray-200 bg-white min-h-[260px]">
-            {/* Left: Thumbnail */}
-            <div className="relative w-[52%] overflow-hidden">
-              {hasCover ? (
-                <div
-                  className="absolute inset-0 bg-cover bg-center"
-                  style={{ backgroundImage: `url(${course.cover_image_url})` }}
-                />
-              ) : (
-                <div
-                  className={cn(
-                    "absolute inset-0 bg-linear-to-br flex items-center justify-center",
-                    gradient
-                  )}
-                >
-                  <BookOpen size={56} className="text-white/25" />
-                </div>
-              )}
-              {/* Gradient overlay */}
-              <div className="absolute inset-0 bg-linear-to-r from-transparent to-white/10" />
-            </div>
-
-            {/* Right: Course Info */}
-            <div className="flex-1 flex flex-col justify-between p-7">
-              <div className="space-y-3">
-                {/* Platform + teacher */}
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded bg-linear-to-br from-blue-600 to-sky-400 flex items-center justify-center">
-                    <GraduationCap size={11} className="text-white" />
-                  </div>
-                  <span className="text-xs text-gray-500 font-medium">
-                    {course.teacher_name ?? "趣学内卷"}
-                  </span>
-                </div>
-
-                {/* Title */}
-                <h3 className="text-xl font-bold text-gray-900 leading-snug line-clamp-2">
-                  {course.title}
-                </h3>
-
-                {/* Description */}
-                <p className="text-sm text-gray-500 leading-relaxed line-clamp-2">
-                  {course.description || "高质量精品微课，提升你的核心竞争力"}
-                </p>
-
-                {/* Tags */}
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <span
-                    className={cn(
-                      "text-xs font-semibold px-2.5 py-1 rounded-full border",
-                      statusInfo.color,
-                      "border-current/20"
-                    )}
-                  >
-                    {statusInfo.label}
-                  </span>
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-600">
-                    入门
-                  </span>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex items-center gap-3 pt-4">
-                <Link
-                  href={`/courses/${course.id}`}
-                  className="px-5 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-200"
-                >
-                  <Play size={13} fill="currentColor" />
-                  立即学习
-                </Link>
-                <Link
-                  href={`/courses/${course.id}`}
-                  className="px-5 py-2 text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 border border-gray-200 hover:border-gray-300 rounded-lg transition-colors"
-                >
-                  了解详情
-                </Link>
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Smaller cards (next courses) */}
-          <div className="hidden lg:flex flex-col gap-3 w-72 shrink-0">
-            <p className="text-xs text-gray-400 font-medium mb-1">更多精选</p>
-            {/* Placeholder mini cards */}
-            <MiniCourseCard label="探索编程开发" sub="50+ 门课程" gradient="from-blue-400 to-blue-600" />
-            <MiniCourseCard label="数据科学入门" sub="30+ 门课程" gradient="from-emerald-400 to-teal-500" />
-            <MiniCourseCard label="AI 与机器学习" sub="20+ 门课程" gradient="from-violet-400 to-indigo-500" />
-          </div>
-        </div>
-
-        {/* Carousel Dots */}
-        {total > 1 && (
-          <div className="flex items-center justify-center gap-2 mt-5">
-            {Array.from({ length: total }).map((_, i) => (
-              <button
-                key={i}
-                onClick={() => onDotClick(i)}
-                className={cn(
-                  "rounded-full transition-all",
-                  i === current
-                    ? "w-5 h-2 bg-blue-600"
-                    : "w-2 h-2 bg-gray-300 hover:bg-gray-400"
-                )}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function MiniCourseCard({
-  label,
-  sub,
-  gradient,
-}: {
-  label: string;
-  sub: string;
-  gradient: string;
-}) {
   return (
     <div
       className={cn(
-        "flex-1 rounded-xl overflow-hidden relative cursor-pointer group",
-        "bg-linear-to-br",
-        gradient
+        "min-w-[min(400px,85vw)] rounded-xl p-6 transition-all hover:-translate-y-1 shadow-sm",
+        surfaceLowest,
       )}
     >
-      <div className="absolute inset-0 bg-black/10 group-hover:bg-black/20 transition-colors" />
-      <div className="relative p-4 flex flex-col justify-end h-full min-h-[72px]">
-        <p className="text-sm font-bold text-white leading-snug">{label}</p>
-        <p className="text-xs text-white/70 mt-0.5">{sub}</p>
+      <div
+        className="h-1 rounded-full mb-4"
+        style={{
+          background: `linear-gradient(to right, ${primary}, ${tertiary})`,
+        }}
+      />
+      <div className="flex justify-between items-start mb-4">
+        <span
+          className="text-xs font-bold tracking-widest uppercase px-3 py-1 rounded-full"
+          style={{ color: primary, background: "#dae2ff" }}
+        >
+          {cat}
+        </span>
+        <span
+          className="text-xs font-bold flex items-center gap-1"
+          style={{ color: tertiary }}
+        >
+          <Users size={14} className="shrink-0" />
+          {k}k 名学员
+        </span>
+      </div>
+      <h3 className="text-xl font-bold mb-2 line-clamp-2">{course.title}</h3>
+      <p className={cn("text-sm line-clamp-2 mb-6", onSurfaceVariant)}>
+        {course.description?.trim() || "高质量精品微课，系统讲解核心知识点。"}
+      </p>
+      <div className="flex items-center justify-between">
+        <span className="font-bold" style={{ color: primary }}>
+          免费
+        </span>
+        <Link
+          href={`/courses/${course.id}`}
+          className="font-bold text-sm flex items-center gap-1 group"
+          style={{ color: primary }}
+        >
+          开始学习
+          <ArrowRight
+            size={16}
+            className="transition-transform group-hover:translate-x-1"
+          />
+        </Link>
       </div>
     </div>
   );
 }
 
-/* ── Filter Group ───────────────────────────────────────── */
+/* ── 网格课程卡片（灰阶封面 + hover） ── */
 
-function FilterGroup({
-  title,
-  hint,
-  tooltip,
-  children,
-}: {
-  title: string;
-  hint?: boolean;
-  tooltip?: string;
-  children: React.ReactNode;
-}) {
+function CurriculumCard({ course }: { course: Course }) {
+  const gradient = getCoverGradient(course.id);
+  const hasCover =
+    !!course.cover_image_url && !course.cover_image_url.includes("example.com");
+  const cat = categoryForCourse(course.id);
+  const learning = pseudoLearners(course.id);
+
   return (
-    <div>
-      <div className="flex items-center gap-1.5 mb-3">
-        <span className="text-sm font-semibold text-gray-800">{title}</span>
-        {hint && (
-          <span
-            title={tooltip}
-            className="w-4 h-4 rounded-full border border-gray-300 text-gray-400 text-[10px] font-bold flex items-center justify-center cursor-help"
+    <Link
+      href={`/courses/${course.id}`}
+      className={cn(
+        "group rounded-xl overflow-hidden transition-all hover:shadow-2xl hover:shadow-[#0040a1]/5",
+        surfaceLow,
+        "hover:bg-white",
+      )}
+    >
+      <div className="relative h-48 bg-[#ddd]">
+        {hasCover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={course.cover_image_url!}
+            alt=""
+            className="w-full h-full object-cover group-hover:grayscale-0 transition-all duration-500"
+          />
+        ) : (
+          <div
+            className={cn(
+              "absolute inset-0 flex items-center justify-center bg-linear-to-br",
+              gradient,
+            )}
           >
-            ?
-          </span>
+            <BookOpen size={48} className="text-white/30" />
+          </div>
         )}
+        <div className="absolute top-4 left-4 bg-white/90 backdrop-blur px-3 py-1 rounded-full shadow-sm">
+          <span
+            className="text-[10px] font-black uppercase tracking-widest"
+            style={{ color: primary }}
+          >
+            免费
+          </span>
+        </div>
       </div>
-      {children}
-    </div>
+      <div className="p-6">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-[#424654]/60">
+            {cat}
+          </span>
+        </div>
+        <h4 className="text-lg font-bold mb-3 leading-tight line-clamp-2 group-hover:text-[#0040a1] transition-colors">
+          {course.title}
+        </h4>
+        <div className="flex items-center justify-between mt-6">
+          <div className="flex items-center gap-1">
+            <Zap size={16} className="text-[#872200]" fill="currentColor" />
+            <span className="text-xs font-bold text-[#424654]">
+              {learning} 人正在学
+            </span>
+          </div>
+          <ExternalLink
+            size={18}
+            className="text-[#424654] group-hover:text-[#0040a1] transition-colors"
+          />
+        </div>
+      </div>
+    </Link>
   );
 }

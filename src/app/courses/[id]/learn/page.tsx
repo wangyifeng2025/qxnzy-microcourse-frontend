@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+
+export const dynamic = "force-dynamic";
 import TopNav from "@/components/top-nav";
 import CourseLearning from "@/components/course-learning";
 import {
@@ -40,12 +42,16 @@ export default async function CourseLearnPage({ params }: PageProps) {
   }));
 
   return (
-    <div className="h-dvh bg-white overflow-hidden">
+    <div className="flex min-h-dvh flex-col bg-[#f9f9fc]">
       <TopNav />
 
-      {/* 固定一屏：不允许页面滚动（左侧列表内部可滚动） */}
-      <div className="h-[calc(100dvh-57px)] overflow-hidden">
-        <CourseLearning courseTitle={course.title} chapters={chaptersWithVideos} />
+      {/* flex-1 + min-h-0：与顶栏占位 h-20 衔接，把剩余视口高度交给学习区（避免旧版 57px 与播放器 h-full 塌陷） */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <CourseLearning
+          courseId={id}
+          courseTitle={course.title}
+          chapters={chaptersWithVideos}
+        />
       </div>
     </div>
   );

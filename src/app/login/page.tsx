@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "@tanstack/react-form";
 import { GraduationCap, Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,14 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { loginApi, saveAuthResponse } from "@/lib/auth";
 
-export default function LoginPage() {
+function safeNextPath(raw: string | null): string | null {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return null;
+  return raw;
+}
+
+function LoginPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -26,13 +32,29 @@ export default function LoginPage() {
         const res = await loginApi(value);
         saveAuthResponse(res);
         // Notify same-tab components
-        window.dispatchEvent(new StorageEvent("storage", {
-          key: "auth_user",
-          newValue: localStorage.getItem("auth_user"),
-        }));
-        router.push("/");
+        window.dispatchEvent(
+          new StorageEvent("storage", {
+            key: "auth_user",
+            newValue: localStorage.getItem("auth_user"),
+          }),
+        );
+        const next = safeNextPath(
+          searchParams.get("next") ?? searchParams.get("redirect"),
+        );
+        if (next) {
+          router.push(next);
+          return;
+        }
+        const role = String(res.user?.role ?? "").toLowerCase();
+        if (role === "admin") {
+          router.push("/admin");
+        } else {
+          router.push("/");
+        }
       } catch (err) {
-        setServerError(err instanceof Error ? err.message : "登录失败，请稍后重试");
+        setServerError(
+          err instanceof Error ? err.message : "登录失败，请稍后重试",
+        );
       }
     },
   });
@@ -52,15 +74,19 @@ export default function LoginPage() {
             <GraduationCap size={22} className="text-white" />
           </div>
           <div>
-            <span className="text-xl font-bold text-gray-900">趣学内卷</span>
-            <span className="ml-1.5 text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">微课平台</span>
+            <span className="text-xl font-bold text-gray-900">微光智造</span>
+            <span className="ml-1.5 text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">
+              微课平台
+            </span>
           </div>
         </div>
 
         <Card className="border-gray-100 shadow-lg shadow-gray-100/50">
           <CardHeader className="pb-4 pt-6 px-8">
             <h1 className="text-xl font-bold text-gray-900">欢迎回来</h1>
-            <p className="text-sm text-gray-500 mt-1">登录你的账号，继续学习之旅</p>
+            <p className="text-sm text-gray-500 mt-1">
+              登录你的账号，继续学习之旅
+            </p>
           </CardHeader>
 
           <CardContent className="px-8 pb-8">
@@ -81,7 +107,10 @@ export default function LoginPage() {
               >
                 {(field) => (
                   <div className="space-y-1.5">
-                    <Label htmlFor={field.name} className="text-sm font-medium text-gray-700">
+                    <Label
+                      htmlFor={field.name}
+                      className="text-sm font-medium text-gray-700"
+                    >
                       用户名
                     </Label>
                     <Input
@@ -95,7 +124,9 @@ export default function LoginPage() {
                       className={`h-10 ${field.state.meta.errors.length > 0 ? "border-red-400 focus-visible:ring-red-200" : "focus-visible:ring-blue-200 focus-visible:border-blue-400"}`}
                     />
                     {field.state.meta.errors.length > 0 && (
-                      <p className="text-xs text-red-500">{field.state.meta.errors[0]?.toString()}</p>
+                      <p className="text-xs text-red-500">
+                        {field.state.meta.errors[0]?.toString()}
+                      </p>
                     )}
                   </div>
                 )}
@@ -106,16 +137,26 @@ export default function LoginPage() {
                 name="password"
                 validators={{
                   onChange: ({ value }) =>
-                    !value ? "请输入密码" : value.length < 6 ? "密码至少 6 位" : undefined,
+                    !value
+                      ? "请输入密码"
+                      : value.length < 6
+                        ? "密码至少 6 位"
+                        : undefined,
                 }}
               >
                 {(field) => (
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <Label htmlFor={field.name} className="text-sm font-medium text-gray-700">
+                      <Label
+                        htmlFor={field.name}
+                        className="text-sm font-medium text-gray-700"
+                      >
                         密码
                       </Label>
-                      <a href="#" className="text-xs text-blue-600 hover:text-blue-800">
+                      <a
+                        href="#"
+                        className="text-xs text-blue-600 hover:text-blue-800"
+                      >
                         忘记密码？
                       </a>
                     </div>
@@ -136,11 +177,17 @@ export default function LoginPage() {
                         onClick={() => setShowPassword(!showPassword)}
                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                       >
-                        {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                        {showPassword ? (
+                          <EyeOff size={15} />
+                        ) : (
+                          <Eye size={15} />
+                        )}
                       </button>
                     </div>
                     {field.state.meta.errors.length > 0 && (
-                      <p className="text-xs text-red-500">{field.state.meta.errors[0]?.toString()}</p>
+                      <p className="text-xs text-red-500">
+                        {field.state.meta.errors[0]?.toString()}
+                      </p>
                     )}
                   </div>
                 )}
@@ -176,7 +223,10 @@ export default function LoginPage() {
 
             <div className="mt-6 text-center text-sm text-gray-500">
               还没有账号？{" "}
-              <a href="/register" className="text-blue-600 hover:text-blue-800 font-medium">
+              <a
+                href="/register"
+                className="text-blue-600 hover:text-blue-800 font-medium"
+              >
                 立即注册
               </a>
             </div>
@@ -185,11 +235,29 @@ export default function LoginPage() {
 
         <p className="text-center text-xs text-gray-400 mt-6">
           登录即表示你同意我们的{" "}
-          <a href="#" className="text-blue-500 hover:underline">服务条款</a>{" "}
+          <a href="#" className="text-blue-500 hover:underline">
+            服务条款
+          </a>{" "}
           和{" "}
-          <a href="#" className="text-blue-500 hover:underline">隐私政策</a>
+          <a href="#" className="text-blue-500 hover:underline">
+            隐私政策
+          </a>
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-gray-50/70 text-[#424654]">
+          加载中…
+        </div>
+      }
+    >
+      <LoginPageInner />
+    </Suspense>
   );
 }
