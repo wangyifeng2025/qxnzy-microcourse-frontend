@@ -47,6 +47,24 @@ function looksLikeHttpUrl(s: string) {
 }
 
 /**
+ * 与上传接口返回的 object_key 对齐：按段做 URI 解码，避免「保存」提交 %E4%BA%BA… 而「上传并应用」为中文文件名导致不一致。
+ */
+function normalizeMinioObjectKey(key: string): string {
+  const trimmed = key.trim().replace(/^\/+/, "");
+  if (!trimmed) return "";
+  return trimmed
+    .split("/")
+    .map((seg) => {
+      try {
+        return decodeURIComponent(seg);
+      } catch {
+        return seg;
+      }
+    })
+    .join("/");
+}
+
+/**
  * 保存到 PUT/PATCH 的 cover_image_url：应为 object key（course-covers/…）。
  * 若误粘贴了完整 URL，仅当路径中含 course-covers/ 时解析为 key；否则返回 null。
  */
@@ -58,13 +76,13 @@ function normalizeCoverImageUrlForSave(raw: string): string | null {
       const u = new URL(v);
       const path = u.pathname.replace(/^\/+/, "");
       const idx = path.indexOf("course-covers/");
-      if (idx >= 0) return path.slice(idx);
+      if (idx >= 0) return normalizeMinioObjectKey(path.slice(idx));
     } catch {
       return null;
     }
     return null;
   }
-  return v.replace(/^\/+/, "");
+  return normalizeMinioObjectKey(v);
 }
 
 export default function TeacherCourseInfoEdit({
@@ -117,7 +135,7 @@ export default function TeacherCourseInfoEdit({
     if (!body) throw new Error("课程数据为空");
     setTitle(body.title ?? "");
     setDescription(body.description ?? "");
-    setCoverImageUrl(body.cover_image_url ?? "");
+    setCoverImageUrl(normalizeMinioObjectKey(body.cover_image_url ?? ""));
   }, [courseId]);
 
   useEffect(() => {
@@ -159,17 +177,14 @@ export default function TeacherCourseInfoEdit({
     setError(null);
     setSuccess(null);
     try {
-      const urlRes = await fetch(
-        `/api/courses/${courseId}/cover/upload-url`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ filename: file.name }),
+      const urlRes = await fetch(`/api/courses/${courseId}/cover/upload-url`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-      );
+        body: JSON.stringify({ filename: file.name }),
+      });
       const urlBody = (await safeJson(urlRes)) as UploadUrlResponse;
       if (!urlRes.ok) {
         throw new Error(
@@ -201,22 +216,18 @@ export default function TeacherCourseInfoEdit({
             reject(new Error(`上传封面到对象存储失败 (${xhr.status})`));
           }
         };
-        xhr.onerror = () =>
-          reject(new Error("上传封面失败（网络错误）"));
+        xhr.onerror = () => reject(new Error("上传封面失败（网络错误）"));
         xhr.send(file);
       });
 
-      const confirmRes = await fetch(
-        `/api/courses/${courseId}/cover/confirm`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ object_key: objectKey }),
+      const confirmRes = await fetch(`/api/courses/${courseId}/cover/confirm`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-      );
+        body: JSON.stringify({ object_key: objectKey }),
+      });
       const confirmBody = await safeJson(confirmRes);
       if (!confirmRes.ok) {
         throw new Error(
@@ -294,7 +305,7 @@ export default function TeacherCourseInfoEdit({
 
       const endpoint = `/api/courses/${courseId}`;
       const patchRes = await fetch(endpoint, {
-        method: "PATCH",
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
@@ -313,9 +324,7 @@ export default function TeacherCourseInfoEdit({
         });
         const putBody = await safeJson(putRes);
         if (!putRes.ok) {
-          throw new Error(
-            putBody?.message ?? `保存失败 (${putRes.status})`,
-          );
+          throw new Error(putBody?.message ?? `保存失败 (${putRes.status})`);
         }
       } else {
         const patchBody = await safeJson(patchRes);
@@ -375,8 +384,8 @@ export default function TeacherCourseInfoEdit({
         <CardHeader className="border-b border-gray-100">
           <CardTitle>简介与封面</CardTitle>
           <CardDescription>
-            封面上传后入库的为 MinIO object key（course-covers/课程ID/文件名）；保存时「封面」字段也提交该
-            key。
+            封面上传后入库的为 MinIO object
+            key（course-covers/课程ID/文件名）；保存时「封面」字段也提交该 key。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6 pt-6">
@@ -391,7 +400,9 @@ export default function TeacherCourseInfoEdit({
             ) : coverImageUrl.trim() ? (
               <div className="text-gray-500 flex flex-col items-center gap-2 px-4 text-center">
                 <ImageIcon size={28} className="text-gray-400" />
-                <span className="text-xs">当前为 object key，无法直接预览图片</span>
+                <span className="text-xs">
+                  当前为 object key，无法直接预览图片
+                </span>
                 <code className="text-[11px] break-all max-w-full bg-white/80 rounded px-2 py-1 border border-gray-100">
                   {coverImageUrl.trim()}
                 </code>
@@ -422,9 +433,7 @@ export default function TeacherCourseInfoEdit({
               <Button
                 type="button"
                 className="rounded-xl gap-2"
-                disabled={
-                  !pendingCoverFile || coverUploading || coverDeleting
-                }
+                disabled={!pendingCoverFile || coverUploading || coverDeleting}
                 onClick={() => {
                   if (pendingCoverFile) void uploadCoverFile(pendingCoverFile);
                 }}
@@ -459,11 +468,7 @@ export default function TeacherCourseInfoEdit({
                 type="button"
                 variant="outline"
                 className="rounded-xl border-gray-200 text-red-600 hover:text-red-700 hover:bg-red-50 gap-2"
-                disabled={
-                  !coverImageUrl ||
-                  coverUploading ||
-                  coverDeleting
-                }
+                disabled={!coverImageUrl || coverUploading || coverDeleting}
                 onClick={() => void deleteCover()}
               >
                 {coverDeleting ? (
@@ -499,8 +504,8 @@ export default function TeacherCourseInfoEdit({
             <p className="text-xs text-gray-400">
               应保存为{" "}
               <code className="px-1 bg-gray-100 rounded">course-covers/…</code>{" "}
-              形式的 key；上传成功后会自动回填。若误粘贴完整 URL，保存时会尽量解析出
-              course-covers/ 段。
+              形式的 key；上传成功后会自动回填。若误粘贴完整
+              URL，保存时会尽量解析出 course-covers/ 段。
             </p>
           </div>
 
@@ -530,7 +535,11 @@ export default function TeacherCourseInfoEdit({
           )}
         </CardContent>
         <CardFooter className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100">
-          <Button variant="outline" className="rounded-xl border-gray-200" asChild>
+          <Button
+            variant="outline"
+            className="rounded-xl border-gray-200"
+            asChild
+          >
             <Link href={`/teacher/courses/${courseId}`}>去编辑章节与视频</Link>
           </Button>
           <Button

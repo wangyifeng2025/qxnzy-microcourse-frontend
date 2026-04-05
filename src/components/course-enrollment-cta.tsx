@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getToken } from "@/lib/auth";
 import {
+  dispatchCourseEnrollmentChanged,
   enrollCourse,
   fetchEnrollmentStatus,
   unenrollCourse,
@@ -66,6 +67,7 @@ export default function CourseEnrollmentCTA({
     try {
       await enrollCourse(token, courseId);
       setEnrolled(true);
+      dispatchCourseEnrollmentChanged(courseId);
       router.push(`/courses/${courseId}/learn`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "选课失败，请稍后重试");
@@ -89,6 +91,7 @@ export default function CourseEnrollmentCTA({
     try {
       await unenrollCourse(token, courseId);
       setEnrolled(false);
+      dispatchCourseEnrollmentChanged(courseId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "取消选课失败，请稍后重试");
     } finally {

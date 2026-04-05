@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  Star,
   Bookmark,
   BarChart3,
   Clock,
@@ -14,8 +13,13 @@ import {
   Download,
   ExternalLink,
   BookOpen,
+  Users,
+  Heart,
 } from "lucide-react";
 import ChapterList from "@/components/chapter-list";
+import CourseDetailStats, {
+  type CourseEngagementSnapshot,
+} from "@/components/course-detail-stats";
 import CourseEnrollmentCTA from "@/components/course-enrollment-cta";
 import {
   STATUS_LABEL,
@@ -26,13 +30,6 @@ import {
 import { cn } from "@/lib/utils";
 
 type ChapterWithVideos = Chapter & { videos: Video[] };
-
-function pseudoEnrolled(id: string): string {
-  let n = 0;
-  for (let i = 0; i < id.length; i++) n = (n * 31 + id.charCodeAt(i)) >>> 0;
-  const k = ((n % 50) + 10) / 10;
-  return `${k.toFixed(1)}k`;
-}
 
 function difficultyLabel(id: string): string {
   const labels = ["入门", "初级", "中级", "进阶"];
@@ -74,7 +71,9 @@ export default function CourseDetailView({
       ? `约 ${Math.round(totalMinutes / 60)} 小时`
       : `约 ${totalMinutes} 分钟`;
 
-  const enrolled = pseudoEnrolled(course.id);
+  const [engagement, setEngagement] = useState<CourseEngagementSnapshot | null>(
+    null,
+  );
 
   const navLinks = [
     { href: "#course-overview", label: "课程概览" },
@@ -103,15 +102,12 @@ export default function CourseDetailView({
               <span className="bg-[#872200] text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-widest">
                 免费
               </span>
-              <div className="flex items-center text-[#424654] font-medium text-sm">
-                <Star
-                  className="text-amber-500 mr-1 size-[18px] fill-amber-500"
-                  aria-hidden
-                />
-                4.8
-                <span className="mx-2 text-[#c3c6d6]">|</span>
-                {enrolled} 名学员已学
-              </div>
+              <CourseDetailStats
+                course={course}
+                courseId={course.id}
+                courseStatus={course.status}
+                onStatsChange={setEngagement}
+              />
             </div>
 
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold tracking-tighter text-[#1a1c1e] leading-[1.1]">
@@ -276,44 +272,29 @@ export default function CourseDetailView({
                 value={statusInfo.label}
                 valueClassName="text-[#0040a1]"
               />
+              <SpecRow
+                icon={<Users className="size-4" />}
+                label="学习人数"
+                value={
+                  engagement?.enrollmentCount != null
+                    ? `${engagement.enrollmentCount.toLocaleString("zh-CN")} 人`
+                    : engagement?.loggedIn === false
+                      ? "登录可见"
+                      : "—"
+                }
+              />
+              <SpecRow
+                icon={<Heart className="size-4" />}
+                label="关注"
+                value={
+                  engagement != null
+                    ? `${engagement.voteCount.toLocaleString("zh-CN")} 人`
+                    : (course.vote_count ?? 0).toLocaleString("zh-CN") + " 人"
+                }
+                valueClassName="text-[#0040a1]"
+              />
             </div>
           </div>
-
-          <div className="bg-[#e8e8ea] p-6 md:p-8 rounded-2xl space-y-6">
-            <div className="flex justify-between items-center">
-              <h3 className="font-bold text-lg text-[#1a1c1e]">讨论精选</h3>
-              <span className="bg-[#872200]/10 text-[#872200] px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-tighter">
-                热聊
-              </span>
-            </div>
-            <div className="space-y-4">
-              <div className="bg-white p-4 rounded-xl text-sm shadow-sm">
-                <p className="text-[#424654] italic">
-                  「这节的例题讲得特别清楚，已二刷！」
-                </p>
-                <div className="mt-3 flex items-center justify-between text-[10px] font-bold text-[#737785]">
-                  <span>@learner_01</span>
-                  <span className="text-[#0040a1]">3 条回复</span>
-                </div>
-              </div>
-              <div className="bg-white p-4 rounded-xl text-sm shadow-sm">
-                <p className="text-[#424654] italic">
-                  「大纲节奏刚好，适合每天半小时。」
-                </p>
-                <div className="mt-3 flex items-center justify-between text-[10px] font-bold text-[#737785]">
-                  <span>@night_owl</span>
-                  <span className="text-[#0040a1]">1 条回复</span>
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              className="w-full py-3 rounded-full border border-[#0040a1] text-[#0040a1] font-bold text-sm hover:bg-[#0040a1]/5 transition-colors"
-            >
-              参与讨论
-            </button>
-          </div>
-
           <div className="bg-[#f9f9fc] p-6 md:p-8 rounded-2xl border border-[#c3c6d6]/30 space-y-6">
             <h3 className="font-bold text-lg text-[#1a1c1e]">学习资源</h3>
             <div className="space-y-2">
@@ -349,7 +330,7 @@ export default function CourseDetailView({
                 </div>
                 <Download className="text-[#737785] group-hover:text-[#0040a1] size-5 shrink-0" />
               </a>
-              <a
+              <Link
                 href="/"
                 className="flex items-center gap-3 p-3 hover:bg-[#f3f3f6] rounded-lg transition-all group"
               >
@@ -363,8 +344,42 @@ export default function CourseDetailView({
                   </p>
                 </div>
                 <ExternalLink className="text-[#737785] group-hover:text-[#0040a1] size-5 shrink-0" />
-              </a>
+              </Link>
             </div>
+          </div>
+          <div className="bg-[#e8e8ea] p-6 md:p-8 rounded-2xl space-y-6">
+            <div className="flex justify-between items-center">
+              <h3 className="font-bold text-lg text-[#1a1c1e]">讨论精选</h3>
+              <span className="bg-[#872200]/10 text-[#872200] px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-tighter">
+                热聊
+              </span>
+            </div>
+            <div className="space-y-4">
+              <div className="bg-white p-4 rounded-xl text-sm shadow-sm">
+                <p className="text-[#424654] italic">
+                  「这节的例题讲得特别清楚，已二刷！」
+                </p>
+                <div className="mt-3 flex items-center justify-between text-[10px] font-bold text-[#737785]">
+                  <span>@learner_01</span>
+                  <span className="text-[#0040a1]">3 条回复</span>
+                </div>
+              </div>
+              <div className="bg-white p-4 rounded-xl text-sm shadow-sm">
+                <p className="text-[#424654] italic">
+                  「大纲节奏刚好，适合每天半小时。」
+                </p>
+                <div className="mt-3 flex items-center justify-between text-[10px] font-bold text-[#737785]">
+                  <span>@night_owl</span>
+                  <span className="text-[#0040a1]">1 条回复</span>
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="w-full py-3 rounded-full border border-[#0040a1] text-[#0040a1] font-bold text-sm hover:bg-[#0040a1]/5 transition-colors"
+            >
+              参与讨论
+            </button>
           </div>
 
           {/* 侧栏快捷 CTA（小屏；与 hero 选课逻辑一致） */}

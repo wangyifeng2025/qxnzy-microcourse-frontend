@@ -9,6 +9,10 @@ export interface Course {
   status: "Draft" | "Published" | "Archived" | string;
   created_at: string;
   updated_at: string;
+  /** 关注人数（接口字段 vote_count）；详情接口返回 */
+  vote_count?: number;
+  /** 当前用户是否已关注；未登录或未选课时为 false */
+  has_voted?: boolean;
 }
 
 export interface CoursesResponse {

@@ -10,6 +10,7 @@ import {
   Trash2,
   ImagePlus,
   Rocket,
+  Undo2,
   Loader2,
   Search,
   Eye,
@@ -39,6 +40,53 @@ const courseTableGridRow = cn(
   "md:items-center",
 );
 
+async function patchCourseStatusApi(
+  courseId: string,
+  token: string,
+  status: "Published" | "Draft",
+): Promise<void> {
+  const payload = { status };
+  const endpoint = `/api/courses/${courseId}`;
+  const patchRes = await fetch(endpoint, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (patchRes.status === 405) {
+    const putRes = await fetch(endpoint, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    let body: { message?: string } = {};
+    try {
+      body = (await putRes.json()) as { message?: string };
+    } catch {
+      body = {};
+    }
+    if (!putRes.ok) {
+      throw new Error(body?.message ?? `更新失败 (${putRes.status})`);
+    }
+  } else {
+    let body: { message?: string } = {};
+    try {
+      body = (await patchRes.json()) as { message?: string };
+    } catch {
+      body = {};
+    }
+    if (!patchRes.ok) {
+      throw new Error(body?.message ?? `更新失败 (${patchRes.status})`);
+    }
+  }
+}
+
 function categoryTag(id: string): string {
   const pool = ["精品微课", "通识", "专业进阶", "实战"];
   let n = 0;
@@ -51,7 +99,10 @@ export default function TeacherConsole() {
   const [courses, setCourses] = useState<Course[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [publishingId, setPublishingId] = useState<string | null>(null);
+  /** 正在发布或取消发布中的课程 id */
+  const [courseStatusBusyId, setCourseStatusBusyId] = useState<string | null>(
+    null,
+  );
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -130,49 +181,9 @@ export default function TeacherConsole() {
       return;
     }
     setError(null);
-    setPublishingId(courseId);
+    setCourseStatusBusyId(courseId);
     try {
-      const payload = { status: "Published" as const };
-      const endpoint = `/api/courses/${courseId}`;
-      const patchRes = await fetch(endpoint, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (patchRes.status === 405) {
-        const putRes = await fetch(endpoint, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify(payload),
-        });
-        let body: { message?: string } = {};
-        try {
-          body = (await putRes.json()) as { message?: string };
-        } catch {
-          body = {};
-        }
-        if (!putRes.ok) {
-          throw new Error(body?.message ?? `发布失败 (${putRes.status})`);
-        }
-      } else {
-        let body: { message?: string } = {};
-        try {
-          body = (await patchRes.json()) as { message?: string };
-        } catch {
-          body = {};
-        }
-        if (!patchRes.ok) {
-          throw new Error(body?.message ?? `发布失败 (${patchRes.status})`);
-        }
-      }
-
+      await patchCourseStatusApi(courseId, token, "Published");
       setCourses((prev) =>
         (prev ?? []).map((c) =>
           c.id === courseId ? { ...c, status: "Published" } : c,
@@ -181,7 +192,36 @@ export default function TeacherConsole() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "发布失败");
     } finally {
-      setPublishingId(null);
+      setCourseStatusBusyId(null);
+    }
+  };
+
+  const unpublishCourse = async (courseId: string) => {
+    const token = getToken();
+    if (!token) {
+      setError("请先登录");
+      return;
+    }
+    if (
+      !confirm(
+        "确定取消发布吗？取消后课程将变为草稿，学员将无法在课程广场看到该课程。",
+      )
+    ) {
+      return;
+    }
+    setError(null);
+    setCourseStatusBusyId(courseId);
+    try {
+      await patchCourseStatusApi(courseId, token, "Draft");
+      setCourses((prev) =>
+        (prev ?? []).map((c) =>
+          c.id === courseId ? { ...c, status: "Draft" } : c,
+        ),
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "取消发布失败");
+    } finally {
+      setCourseStatusBusyId(null);
     }
   };
 
@@ -484,15 +524,32 @@ export default function TeacherConsole() {
                           variant="ghost"
                           size="sm"
                           className="gap-1 text-green-700 hover:bg-green-50"
-                          disabled={!!publishingId || loading}
+                          disabled={!!courseStatusBusyId || loading}
                           onClick={() => void publishCourse(c.id)}
                         >
-                          {publishingId === c.id ? (
+                          {courseStatusBusyId === c.id ? (
                             <Loader2 size={14} className="animate-spin" />
                           ) : (
                             <Rocket size={14} />
                           )}
                           <span className="hidden sm:inline">发布</span>
+                        </Button>
+                      )}
+                      {isCoursePublished(c.status) && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1 text-amber-800 hover:bg-amber-50"
+                          disabled={!!courseStatusBusyId || loading}
+                          onClick={() => void unpublishCourse(c.id)}
+                        >
+                          {courseStatusBusyId === c.id ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Undo2 size={14} />
+                          )}
+                          <span className="hidden sm:inline">取消发布</span>
                         </Button>
                       )}
                       <Button
