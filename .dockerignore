@@ -1,0 +1,29 @@
+# 依赖与构建产物（镜像内会重新安装/构建）
+node_modules
+.next
+out
+
+# Git 与编辑器
+.git
+.gitignore
+.cursor
+*.md
+
+# 本地环境（若需注入请用构建参数或编排环境变量，勿复制密钥）
+.env
+.env.*
+!.env.example
+
+# 测试与 CI（若存在）
+coverage
+.nyc_output
+
+# Docker 自身
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# 日志与杂项
+npm-debug.log*
+pnpm-debug.log*
+.DS_Store
