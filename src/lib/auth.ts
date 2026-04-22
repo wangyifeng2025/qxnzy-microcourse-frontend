@@ -19,6 +19,8 @@ export interface UserInfo {
   role: string;
   real_name: string;
   avatar_url?: string | null;
+  /** 管理员重置密码后为 true，用户自行修改后清除为 false */
+  password_reset_required?: boolean;
 }
 
 export interface AuthResponse {
@@ -88,6 +90,37 @@ export function getUser(): UserInfo | null {
 
 export function isLoggedIn(): boolean {
   return !!getToken();
+}
+
+/**
+ * 将从后端拉取的最新 profile 写回 localStorage 并广播 storage 事件，
+ * 确保所有组件（Sidebar 等）能感知到字段变化。
+ */
+export function saveUserInfo(user: UserInfo) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem("auth_user", JSON.stringify(user));
+  window.dispatchEvent(
+    new StorageEvent("storage", {
+      key: "auth_user",
+      newValue: JSON.stringify(user),
+    }),
+  );
+}
+
+/**
+ * 用户自行修改密码成功后调用，清除本地缓存的 password_reset_required 标记。
+ */
+export function clearPasswordResetRequired() {
+  if (typeof window === "undefined") return;
+  const raw = localStorage.getItem("auth_user");
+  if (!raw) return;
+  try {
+    const user = JSON.parse(raw) as UserInfo;
+    user.password_reset_required = false;
+    saveUserInfo(user);
+  } catch {
+    // ignore
+  }
 }
 
 export function logout() {

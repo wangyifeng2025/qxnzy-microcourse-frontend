@@ -31,13 +31,25 @@ function LoginPageInner() {
       try {
         const res = await loginApi(value);
         saveAuthResponse(res);
-        // Notify same-tab components
+        // 通知同 tab 内其他组件用户状态已更新
         window.dispatchEvent(
           new StorageEvent("storage", {
             key: "auth_user",
             newValue: localStorage.getItem("auth_user"),
           }),
         );
+
+        // 管理员重置密码后强制修改
+        if (res.user?.password_reset_required) {
+          const next = safeNextPath(
+            searchParams.get("next") ?? searchParams.get("redirect"),
+          );
+          router.push(
+            `/change-password${next ? `?next=${encodeURIComponent(next)}` : ""}`,
+          );
+          return;
+        }
+
         const next = safeNextPath(
           searchParams.get("next") ?? searchParams.get("redirect"),
         );

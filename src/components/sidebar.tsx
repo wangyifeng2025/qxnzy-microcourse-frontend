@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import {
   Home,
   Compass,
@@ -17,7 +18,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { getUser, type UserInfo } from "@/lib/auth";
+import { getUser, getToken, saveUserInfo, type UserInfo } from "@/lib/auth";
+import { fetchUserProfile } from "@/lib/users";
 
 const navItems = [
   { icon: Home, label: "首页", href: "/", active: true },
@@ -31,7 +33,10 @@ const categories = [
   { label: "编程开发", color: "bg-blue-50 text-blue-600 hover:bg-blue-100" },
   { label: "设计创意", color: "bg-rose-50 text-rose-600 hover:bg-rose-100" },
   { label: "商业管理", color: "bg-amber-50 text-amber-600 hover:bg-amber-100" },
-  { label: "语言学习", color: "bg-emerald-50 text-emerald-600 hover:bg-emerald-100" },
+  {
+    label: "语言学习",
+    color: "bg-emerald-50 text-emerald-600 hover:bg-emerald-100",
+  },
   { label: "数据科学", color: "bg-sky-50 text-sky-600 hover:bg-sky-100" },
 ];
 
@@ -42,19 +47,59 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export default function Sidebar() {
+  const router = useRouter();
+  const pathname = usePathname();
   const [activeItem, setActiveItem] = useState("首页");
   const [user, setUser] = useState<UserInfo | null>(null);
 
   useEffect(() => {
-    setUser(getUser());
+    const redirectIfNeeded = (u: UserInfo | null) => {
+      if (u?.password_reset_required && pathname !== "/change-password") {
+        router.replace(
+          `/change-password?next=${encodeURIComponent(pathname ?? "/")}`,
+        );
+      }
+    };
+
+    // 优先读本地缓存快速判断
+    const cached = getUser();
+    setUser(cached);
+    redirectIfNeeded(cached);
+
+    // 再从后端拉取最新状态，确保管理员重置密码后能及时感知
+    const token = getToken();
+    if (token && cached?.id) {
+      fetchUserProfile(token, cached.id)
+        .then((profile) => {
+          const updated: UserInfo = {
+            ...cached,
+            password_reset_required: profile.password_reset_required,
+          };
+          // 只在字段有变化时才写入，避免不必要的重渲染
+          if (profile.password_reset_required !== cached.password_reset_required) {
+            saveUserInfo(updated);
+            setUser(updated);
+          }
+          redirectIfNeeded(updated);
+        })
+        .catch(() => {
+          // 静默失败，不影响正常使用
+        });
+    }
+
     const onStorage = (e: StorageEvent) => {
       if (e.key === "auth_user") {
-        setUser(e.newValue ? (JSON.parse(e.newValue) as UserInfo) : null);
+        const updated = e.newValue
+          ? (JSON.parse(e.newValue) as UserInfo)
+          : null;
+        setUser(updated);
+        redirectIfNeeded(updated);
       }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pathname 变化时重新检查
+  }, [pathname]);
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-60 bg-white border-r border-gray-100 flex flex-col z-30">
@@ -64,8 +109,15 @@ export default function Sidebar() {
           <GraduationCap size={17} className="text-white" />
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-[15px] font-bold text-gray-900 tracking-tight">趣学内卷</span>
-          <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-medium text-blue-600 bg-blue-50 border-0">微课</Badge>
+          <span className="text-[15px] font-bold text-gray-900 tracking-tight">
+            微光智造
+          </span>
+          <Badge
+            variant="secondary"
+            className="text-[10px] px-1.5 py-0 h-4 font-medium text-blue-600 bg-blue-50 border-0"
+          >
+            微课
+          </Badge>
         </div>
       </div>
 
@@ -79,18 +131,23 @@ export default function Sidebar() {
             <a
               key={label}
               href={href}
-              onClick={(e) => { e.preventDefault(); setActiveItem(label); }}
+              onClick={(e) => {
+                e.preventDefault();
+                setActiveItem(label);
+              }}
               className={cn(
                 "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group",
                 isActive
                   ? "bg-blue-50 text-blue-700"
-                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                  : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
               )}
             >
               <Icon
                 size={17}
                 className={cn(
-                  isActive ? "text-blue-600" : "text-gray-400 group-hover:text-gray-500"
+                  isActive
+                    ? "text-blue-600"
+                    : "text-gray-400 group-hover:text-gray-500",
                 )}
               />
               <span className="flex-1">{label}</span>
@@ -101,14 +158,16 @@ export default function Sidebar() {
 
         {/* Categories */}
         <div className="pt-4 pb-1">
-          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest px-3 mb-2.5">分类浏览</p>
+          <p className="text-[11px] font-semibold text-gray-400 uppercase tracking-widest px-3 mb-2.5">
+            分类浏览
+          </p>
           <div className="flex flex-wrap gap-1.5 px-1">
             {categories.map(({ label, color }) => (
               <button
                 key={label}
                 className={cn(
                   "text-[11px] font-medium px-2.5 py-1 rounded-full transition-colors cursor-pointer",
-                  color
+                  color,
                 )}
               >
                 {label}
@@ -128,7 +187,9 @@ export default function Sidebar() {
         >
           <Bell size={17} className="text-gray-400" />
           <span className="flex-1">消息通知</span>
-          <Badge className="bg-red-500 text-white text-[10px] h-4 min-w-4 px-1 justify-center">3</Badge>
+          <Badge className="bg-red-500 text-white text-[10px] h-4 min-w-4 px-1 justify-center">
+            3
+          </Badge>
         </a>
         <a
           href="/settings"

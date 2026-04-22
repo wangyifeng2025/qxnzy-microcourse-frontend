@@ -1,12 +1,8 @@
 "use client";
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useForm } from "@tanstack/react-form";
 import {
   useReactTable,
   getCoreRowModel,
@@ -21,13 +17,16 @@ import {
   Loader2,
   Pencil,
   Trash2,
+  KeyRound,
 } from "lucide-react";
-import { getUser, getToken, logout, type UserInfo } from "@/lib/auth";
+import { getUser, getToken, logout, saveUserInfo, type UserInfo } from "@/lib/auth";
 import AdminShell from "@/components/admin-shell";
 import { cn } from "@/lib/utils";
 import {
+  adminResetPassword,
   createUserAsAdmin,
   deleteUserAsAdmin,
+  fetchUserProfile,
   fetchUsersList,
   updateUserAsAdmin,
   type CreateUserPayload,
@@ -79,9 +78,7 @@ function mapUserListItemToRow(item: UserListItem): AdminUserRow {
   };
 }
 
-function normalizeRoleForForm(
-  role: string,
-): CreateUserPayload["role"] {
+function normalizeRoleForForm(role: string): CreateUserPayload["role"] {
   const r = role.toLowerCase();
   if (r === "admin") return "Admin";
   if (r === "teacher") return "Teacher";
@@ -103,19 +100,19 @@ function roleLabelZh(role: string) {
   return role;
 }
 
-const emptyInviteForm = (): {
+const INVITE_DEFAULT_VALUES: {
   username: string;
   email: string;
   password: string;
   role: CreateUserPayload["role"];
   real_name: string;
-} => ({
+} = {
   username: "",
   email: "",
   password: "",
   role: "Student",
   real_name: "",
-});
+};
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -131,23 +128,23 @@ export default function AdminDashboard() {
   } | null>(null);
 
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [inviteForm, setInviteForm] = useState(emptyInviteForm);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
 
   const [editingUser, setEditingUser] = useState<AdminUserRow | null>(null);
-  const [editForm, setEditForm] = useState({
-    email: "",
-    role: "Student" as CreateUserPayload["role"],
-    real_name: "",
-    is_active: true,
-    password: "",
-  });
   const [editError, setEditError] = useState<string | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<AdminUserRow | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  const [resetPasswordTarget, setResetPasswordTarget] =
+    useState<AdminUserRow | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState("");
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetPasswordError, setResetPasswordError] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     const u = getUser();
@@ -156,6 +153,25 @@ export default function AdminDashboard() {
       return;
     }
     setCurrentUser(u);
+
+    // 从后端拉取最新 profile，确保 password_reset_required 是最新状态
+    const token = getToken();
+    if (token && u.id) {
+      fetchUserProfile(token, u.id)
+        .then((profile) => {
+          if (profile.password_reset_required) {
+            const updated: UserInfo = {
+              ...u,
+              password_reset_required: true,
+            };
+            saveUserInfo(updated);
+            router.replace("/change-password?next=/admin");
+          }
+        })
+        .catch(() => {
+          // 静默失败，不影响正常使用
+        });
+    }
   }, [router]);
 
   const refreshUserList = useCallback(async () => {
@@ -198,6 +214,106 @@ export default function AdminDashboard() {
     }
   }, [router]);
 
+  const inviteUserForm = useForm({
+    defaultValues: INVITE_DEFAULT_VALUES,
+    onSubmit: async ({ value }) => {
+      const token = getToken();
+      if (!token) {
+        setInviteError("请先登录后再创建用户");
+        return;
+      }
+      const u = value.username.trim();
+      const em = value.email.trim();
+      const rn = value.real_name.trim();
+      if (!u || !em || !value.password || !rn) {
+        setInviteError("请填写用户名、邮箱、密码与真实姓名");
+        return;
+      }
+      setIsCreating(true);
+      setInviteError(null);
+      try {
+        const payload: CreateUserPayload = {
+          username: u,
+          email: em,
+          password: value.password,
+          role: value.role,
+          real_name: rn,
+        };
+        await createUserAsAdmin({ token, payload });
+        setInviteOpen(false);
+        inviteUserForm.reset();
+        setInviteError(null);
+        await refreshUserList();
+      } catch (err: unknown) {
+        const msg =
+          err instanceof Error ? err.message : "创建用户失败，请稍后重试";
+        setInviteError(msg);
+        if (
+          typeof msg === "string" &&
+          (msg.includes(" 401") || msg.includes(": 401"))
+        ) {
+          logout();
+          router.replace("/login");
+        }
+      } finally {
+        setIsCreating(false);
+      }
+    },
+  });
+
+  const editUserForm = useForm({
+    defaultValues: {
+      email: "",
+      role: "Student" as CreateUserPayload["role"],
+      real_name: "",
+      is_active: true,
+    },
+    onSubmit: async ({ value }) => {
+      if (!editingUser) return;
+      const token = getToken();
+      if (!token) {
+        setEditError("请先登录后再保存");
+        return;
+      }
+      const em = value.email.trim();
+      const rn = value.real_name.trim();
+      if (!em || !rn) {
+        setEditError("请填写邮箱与真实姓名");
+        return;
+      }
+      setIsSavingEdit(true);
+      setEditError(null);
+      try {
+        await updateUserAsAdmin({
+          token,
+          userId: editingUser.id,
+          payload: {
+            email: em,
+            role: value.role,
+            real_name: rn,
+            is_active: value.is_active,
+          },
+        });
+        setEditingUser(null);
+        setEditError(null);
+        await refreshUserList();
+      } catch (err: unknown) {
+        const msg =
+          err instanceof Error ? err.message : "更新用户失败，请稍后重试";
+        setEditError(msg);
+        if (
+          typeof msg === "string" &&
+          (msg.includes(" 401") || msg.includes(": 401"))
+        ) {
+          logout();
+          router.replace("/login");
+        }
+      } finally {
+        setIsSavingEdit(false);
+      }
+    },
+  });
+
   useEffect(() => {
     if (!currentUser) return;
     void refreshUserList();
@@ -205,7 +321,7 @@ export default function AdminDashboard() {
 
   const closeInviteModal = () => {
     setInviteOpen(false);
-    setInviteForm(emptyInviteForm());
+    inviteUserForm.reset();
     setInviteError(null);
   };
 
@@ -219,59 +335,16 @@ export default function AdminDashboard() {
     closeInviteModal();
   };
 
-  const handleInviteSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const token = getToken();
-    if (!token) {
-      setInviteError("请先登录后再创建用户");
-      return;
-    }
-    const u = inviteForm.username.trim();
-    const em = inviteForm.email.trim();
-    const rn = inviteForm.real_name.trim();
-    if (!u || !em || !inviteForm.password || !rn) {
-      setInviteError("请填写用户名、邮箱、密码与真实姓名");
-      return;
-    }
-    setIsCreating(true);
-    setInviteError(null);
-    try {
-      const payload: CreateUserPayload = {
-        username: u,
-        email: em,
-        password: inviteForm.password,
-        role: inviteForm.role,
-        real_name: rn,
-      };
-      await createUserAsAdmin({ token, payload });
-      closeInviteModal();
-      await refreshUserList();
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "创建用户失败，请稍后重试";
-      setInviteError(msg);
-      if (
-        typeof msg === "string" &&
-        (msg.includes(" 401") || msg.includes(": 401"))
-      ) {
-        logout();
-        router.replace("/login");
-      }
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
   useEffect(() => {
     if (!editingUser) return;
-    setEditForm({
+    editUserForm.reset({
       email: editingUser.email,
       role: normalizeRoleForForm(editingUser.role),
       real_name: editingUser.real_name?.trim() || editingUser.displayName,
       is_active: editingUser.status === "active",
-      password: "",
     });
     setEditError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅随选中行同步表单，editUserForm API 稳定
   }, [editingUser]);
 
   const closeEditModal = () => {
@@ -283,52 +356,6 @@ export default function AdminDashboard() {
     if (open) return;
     if (isSavingEdit) return;
     closeEditModal();
-  };
-
-  const handleEditSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!editingUser) return;
-    const token = getToken();
-    if (!token) {
-      setEditError("请先登录后再保存");
-      return;
-    }
-    const em = editForm.email.trim();
-    const rn = editForm.real_name.trim();
-    if (!em || !rn) {
-      setEditError("请填写邮箱与真实姓名");
-      return;
-    }
-    setIsSavingEdit(true);
-    setEditError(null);
-    try {
-      await updateUserAsAdmin({
-        token,
-        userId: editingUser.id,
-        payload: {
-          email: em,
-          role: editForm.role,
-          real_name: rn,
-          is_active: editForm.is_active,
-          password: editForm.password.trim() || undefined,
-        },
-      });
-      closeEditModal();
-      await refreshUserList();
-    } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "更新用户失败，请稍后重试";
-      setEditError(msg);
-      if (
-        typeof msg === "string" &&
-        (msg.includes(" 401") || msg.includes(": 401"))
-      ) {
-        logout();
-        router.replace("/login");
-      }
-    } finally {
-      setIsSavingEdit(false);
-    }
   };
 
   const onDeleteOpenChange = (open: boolean) => {
@@ -359,6 +386,56 @@ export default function AdminDashboard() {
       }
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const openResetPasswordDialog = (user: AdminUserRow) => {
+    setResetPasswordTarget(user);
+    setResetPasswordValue("");
+    setResetPasswordError(null);
+  };
+
+  const closeResetPasswordDialog = () => {
+    if (isResettingPassword) return;
+    setResetPasswordTarget(null);
+    setResetPasswordValue("");
+    setResetPasswordError(null);
+  };
+
+  const handleResetPasswordConfirm = async () => {
+    if (!resetPasswordTarget) return;
+    const token = getToken();
+    if (!token) {
+      setResetPasswordError("未找到登录凭证，请重新登录");
+      return;
+    }
+    const pwd = resetPasswordValue.trim();
+    if (!pwd || pwd.length < 6) {
+      setResetPasswordError("新密码至少 6 位");
+      return;
+    }
+    setIsResettingPassword(true);
+    setResetPasswordError(null);
+    try {
+      await adminResetPassword({
+        token,
+        userId: resetPasswordTarget.id,
+        newPassword: pwd,
+      });
+      setResetPasswordTarget(null);
+      setResetPasswordValue("");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "重置密码失败，请稍后重试";
+      setResetPasswordError(msg);
+      if (
+        typeof msg === "string" &&
+        (msg.includes(" 401") || msg.includes(": 401"))
+      ) {
+        logout();
+        router.replace("/login");
+      }
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -487,6 +564,17 @@ export default function AdminDashboard() {
                 type="button"
                 variant="ghost"
                 size="icon-sm"
+                title="重置密码"
+                className="text-slate-500 hover:bg-amber-50 hover:text-amber-600"
+                aria-label={`重置 ${u.displayName} 的密码`}
+                onClick={() => openResetPasswordDialog(u)}
+              >
+                <KeyRound className="size-4" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
                 disabled={isSelf}
                 title={isSelf ? "不能删除当前登录账号" : "删除用户"}
                 className="text-slate-500 hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
@@ -555,7 +643,12 @@ export default function AdminDashboard() {
               if (isCreating) ev.preventDefault();
             }}
           >
-            <form onSubmit={handleInviteSubmit}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                inviteUserForm.handleSubmit();
+              }}
+            >
               <DialogHeader>
                 <DialogTitle>邀请用户</DialogTitle>
                 <DialogDescription>
@@ -577,113 +670,199 @@ export default function AdminDashboard() {
                   </div>
                 ) : null}
 
-                <div className="grid gap-2">
-                  <Label htmlFor="invite-username">用户名</Label>
-                  <Input
-                    id="invite-username"
-                    name="username"
-                    autoComplete="username"
-                    value={inviteForm.username}
-                    onChange={(e) =>
-                      setInviteForm((f) => ({ ...f, username: e.target.value }))
-                    }
-                    disabled={isCreating}
-                    placeholder="newstudent"
-                    className="h-10 border-[#e8e8ea] bg-white"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="invite-email">邮箱</Label>
-                  <Input
-                    id="invite-email"
-                    name="email"
-                    type="email"
-                    autoComplete="email"
-                    value={inviteForm.email}
-                    onChange={(e) =>
-                      setInviteForm((f) => ({ ...f, email: e.target.value }))
-                    }
-                    disabled={isCreating}
-                    placeholder="user@example.com"
-                    className="h-10 border-[#e8e8ea] bg-white"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="invite-password">密码</Label>
-                  <Input
-                    id="invite-password"
-                    name="password"
-                    type="password"
-                    autoComplete="new-password"
-                    value={inviteForm.password}
-                    onChange={(e) =>
-                      setInviteForm((f) => ({ ...f, password: e.target.value }))
-                    }
-                    disabled={isCreating}
-                    placeholder="至少 6 位"
-                    className="h-10 border-[#e8e8ea] bg-white"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="invite-role">角色</Label>
-                  <select
-                    id="invite-role"
-                    value={inviteForm.role}
-                    onChange={(e) =>
-                      setInviteForm((f) => ({
-                        ...f,
-                        role: e.target.value as CreateUserPayload["role"],
-                      }))
-                    }
-                    disabled={isCreating}
-                    className="h-10 w-full rounded-lg border border-[#e8e8ea] bg-white px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#0040a1]/30 disabled:opacity-50"
-                  >
-                    <option value="Student">学员</option>
-                    <option value="Teacher">讲师</option>
-                    <option value="Admin">管理员</option>
-                  </select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="invite-realname">真实姓名</Label>
-                  <Input
-                    id="invite-realname"
-                    name="real_name"
-                    autoComplete="name"
-                    value={inviteForm.real_name}
-                    onChange={(e) =>
-                      setInviteForm((f) => ({ ...f, real_name: e.target.value }))
-                    }
-                    disabled={isCreating}
-                    placeholder="新学生"
-                    className="h-10 border-[#e8e8ea] bg-white"
-                  />
-                </div>
+                <inviteUserForm.Field
+                  name="username"
+                  validators={{
+                    onChange: ({ value }) =>
+                      !value.trim() ? "请输入用户名" : undefined,
+                  }}
+                >
+                  {(field) => (
+                    <div className="grid gap-2">
+                      <Label htmlFor={field.name}>用户名</Label>
+                      <Input
+                        id="invite-username"
+                        name={field.name}
+                        autoComplete="username"
+                        value={field.state.value}
+                        onBlur={field.handleBlur}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        disabled={isCreating}
+                        placeholder="newstudent"
+                        className={cn(
+                          "h-10 border-[#e8e8ea] bg-white",
+                          field.state.meta.errors.length > 0 &&
+                            "border-red-300",
+                        )}
+                      />
+                      {field.state.meta.errors.length > 0 ? (
+                        <p className="text-xs text-red-600">
+                          {String(field.state.meta.errors[0])}
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </inviteUserForm.Field>
+
+                <inviteUserForm.Field
+                  name="email"
+                  validators={{
+                    onChange: ({ value }) =>
+                      !value.trim() ? "请输入邮箱" : undefined,
+                  }}
+                >
+                  {(field) => (
+                    <div className="grid gap-2">
+                      <Label htmlFor={field.name}>邮箱</Label>
+                      <Input
+                        id="invite-email"
+                        name={field.name}
+                        type="email"
+                        autoComplete="email"
+                        value={field.state.value}
+                        onBlur={field.handleBlur}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        disabled={isCreating}
+                        placeholder="user@example.com"
+                        className={cn(
+                          "h-10 border-[#e8e8ea] bg-white",
+                          field.state.meta.errors.length > 0 &&
+                            "border-red-300",
+                        )}
+                      />
+                      {field.state.meta.errors.length > 0 ? (
+                        <p className="text-xs text-red-600">
+                          {String(field.state.meta.errors[0])}
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </inviteUserForm.Field>
+
+                <inviteUserForm.Field
+                  name="password"
+                  validators={{
+                    onChange: ({ value }) =>
+                      !value
+                        ? "请输入密码"
+                        : value.length < 6
+                          ? "密码至少 6 位"
+                          : undefined,
+                  }}
+                >
+                  {(field) => (
+                    <div className="grid gap-2">
+                      <Label htmlFor={field.name}>密码</Label>
+                      <Input
+                        id="invite-password"
+                        name={field.name}
+                        type="password"
+                        autoComplete="new-password"
+                        value={field.state.value}
+                        onBlur={field.handleBlur}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        disabled={isCreating}
+                        placeholder="至少 6 位"
+                        className={cn(
+                          "h-10 border-[#e8e8ea] bg-white",
+                          field.state.meta.errors.length > 0 &&
+                            "border-red-300",
+                        )}
+                      />
+                      {field.state.meta.errors.length > 0 ? (
+                        <p className="text-xs text-red-600">
+                          {String(field.state.meta.errors[0])}
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </inviteUserForm.Field>
+
+                <inviteUserForm.Field name="role">
+                  {(field) => (
+                    <div className="grid gap-2">
+                      <Label htmlFor="invite-role">角色</Label>
+                      <select
+                        id="invite-role"
+                        value={field.state.value}
+                        onChange={(e) =>
+                          field.handleChange(
+                            e.target.value as CreateUserPayload["role"],
+                          )
+                        }
+                        onBlur={field.handleBlur}
+                        disabled={isCreating}
+                        className="h-10 w-full rounded-lg border border-[#e8e8ea] bg-white px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#0040a1]/30 disabled:opacity-50"
+                      >
+                        <option value="Student">学员</option>
+                        <option value="Teacher">讲师</option>
+                        <option value="Admin">管理员</option>
+                      </select>
+                    </div>
+                  )}
+                </inviteUserForm.Field>
+
+                <inviteUserForm.Field
+                  name="real_name"
+                  validators={{
+                    onChange: ({ value }) =>
+                      !value.trim() ? "请输入真实姓名" : undefined,
+                  }}
+                >
+                  {(field) => (
+                    <div className="grid gap-2">
+                      <Label htmlFor={field.name}>真实姓名</Label>
+                      <Input
+                        id="invite-realname"
+                        name={field.name}
+                        autoComplete="name"
+                        value={field.state.value}
+                        onBlur={field.handleBlur}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        disabled={isCreating}
+                        placeholder="新学生"
+                        className={cn(
+                          "h-10 border-[#e8e8ea] bg-white",
+                          field.state.meta.errors.length > 0 &&
+                            "border-red-300",
+                        )}
+                      />
+                      {field.state.meta.errors.length > 0 ? (
+                        <p className="text-xs text-red-600">
+                          {String(field.state.meta.errors[0])}
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </inviteUserForm.Field>
               </div>
 
               <DialogFooter>
                 <DialogClose asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={isCreating}
-                  >
+                  <Button type="button" variant="outline" disabled={isCreating}>
                     取消
                   </Button>
                 </DialogClose>
-                <Button
-                  type="submit"
-                  disabled={isCreating}
-                  className="inline-flex items-center gap-2"
+                <inviteUserForm.Subscribe
+                  selector={(s) => [s.canSubmit, s.isSubmitting] as const}
                 >
-                  {isCreating ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" aria-hidden />
-                      创建中…
-                    </>
-                  ) : (
-                    "创建用户"
+                  {([canSubmit, isSubmitting]) => (
+                    <Button
+                      type="submit"
+                      disabled={isCreating || !canSubmit || isSubmitting}
+                      className="inline-flex items-center gap-2"
+                    >
+                      {isCreating || isSubmitting ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" aria-hidden />
+                          创建中…
+                        </>
+                      ) : (
+                        "创建用户"
+                      )}
+                    </Button>
                   )}
-                </Button>
+                </inviteUserForm.Subscribe>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -699,11 +878,16 @@ export default function AdminDashboard() {
               if (isSavingEdit) ev.preventDefault();
             }}
           >
-            <form onSubmit={handleEditSubmit}>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                editUserForm.handleSubmit();
+              }}
+            >
               <DialogHeader>
                 <DialogTitle>编辑用户</DialogTitle>
                 <DialogDescription>
-                  修改邮箱、角色、姓名与账号状态；留空「新密码」则不修改密码。
+                  修改邮箱、角色、姓名与账号状态。如需重置密码，请使用操作列中的密钥按钮。
                 </DialogDescription>
               </DialogHeader>
 
@@ -727,107 +911,147 @@ export default function AdminDashboard() {
                     className="h-10 border-[#e8e8ea] bg-[#f3f3f6] text-[#424654]"
                   />
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-email">邮箱</Label>
-                  <Input
-                    id="edit-email"
-                    type="email"
-                    autoComplete="email"
-                    value={editForm.email}
-                    onChange={(e) =>
-                      setEditForm((f) => ({ ...f, email: e.target.value }))
-                    }
-                    disabled={isSavingEdit}
-                    className="h-10 border-[#e8e8ea] bg-white"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-role">角色</Label>
-                  <select
-                    id="edit-role"
-                    value={editForm.role}
-                    onChange={(e) =>
-                      setEditForm((f) => ({
-                        ...f,
-                        role: e.target.value as CreateUserPayload["role"],
-                      }))
-                    }
-                    disabled={isSavingEdit}
-                    className="h-10 w-full rounded-lg border border-[#e8e8ea] bg-white px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#0040a1]/30 disabled:opacity-50"
-                  >
-                    <option value="Student">学员</option>
-                    <option value="Teacher">讲师</option>
-                    <option value="Admin">管理员</option>
-                  </select>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-realname">真实姓名</Label>
-                  <Input
-                    id="edit-realname"
-                    autoComplete="name"
-                    value={editForm.real_name}
-                    onChange={(e) =>
-                      setEditForm((f) => ({ ...f, real_name: e.target.value }))
-                    }
-                    disabled={isSavingEdit}
-                    className="h-10 border-[#e8e8ea] bg-white"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <input
-                    id="edit-active"
-                    type="checkbox"
-                    checked={editForm.is_active}
-                    onChange={(e) =>
-                      setEditForm((f) => ({
-                        ...f,
-                        is_active: e.target.checked,
-                      }))
-                    }
-                    disabled={isSavingEdit}
-                    className="size-4 rounded border-[#e8e8ea] accent-[#0040a1]"
-                  />
-                  <Label htmlFor="edit-active" className="font-normal">
-                    账号启用
-                  </Label>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-password">新密码（可选）</Label>
-                  <Input
-                    id="edit-password"
-                    type="password"
-                    autoComplete="new-password"
-                    value={editForm.password}
-                    onChange={(e) =>
-                      setEditForm((f) => ({ ...f, password: e.target.value }))
-                    }
-                    disabled={isSavingEdit}
-                    placeholder="不修改请留空"
-                    className="h-10 border-[#e8e8ea] bg-white"
-                  />
-                </div>
+
+                <editUserForm.Field
+                  name="email"
+                  validators={{
+                    onChange: ({ value }) =>
+                      !value.trim() ? "请输入邮箱" : undefined,
+                  }}
+                >
+                  {(field) => (
+                    <div className="grid gap-2">
+                      <Label htmlFor={field.name}>邮箱</Label>
+                      <Input
+                        id="edit-email"
+                        type="email"
+                        autoComplete="email"
+                        value={field.state.value}
+                        onBlur={field.handleBlur}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        disabled={isSavingEdit}
+                        className={cn(
+                          "h-10 border-[#e8e8ea] bg-white",
+                          field.state.meta.errors.length > 0 &&
+                            "border-red-300",
+                        )}
+                      />
+                      {field.state.meta.errors.length > 0 ? (
+                        <p className="text-xs text-red-600">
+                          {String(field.state.meta.errors[0])}
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </editUserForm.Field>
+
+                <editUserForm.Field name="role">
+                  {(field) => (
+                    <div className="grid gap-2">
+                      <Label htmlFor="edit-role">角色</Label>
+                      <select
+                        id="edit-role"
+                        value={field.state.value}
+                        onChange={(e) =>
+                          field.handleChange(
+                            e.target.value as CreateUserPayload["role"],
+                          )
+                        }
+                        onBlur={field.handleBlur}
+                        disabled={isSavingEdit}
+                        className="h-10 w-full rounded-lg border border-[#e8e8ea] bg-white px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-[#0040a1]/30 disabled:opacity-50"
+                      >
+                        <option value="Student">学员</option>
+                        <option value="Teacher">讲师</option>
+                        <option value="Admin">管理员</option>
+                      </select>
+                    </div>
+                  )}
+                </editUserForm.Field>
+
+                <editUserForm.Field
+                  name="real_name"
+                  validators={{
+                    onChange: ({ value }) =>
+                      !value.trim() ? "请输入真实姓名" : undefined,
+                  }}
+                >
+                  {(field) => (
+                    <div className="grid gap-2">
+                      <Label htmlFor={field.name}>真实姓名</Label>
+                      <Input
+                        id="edit-realname"
+                        autoComplete="name"
+                        value={field.state.value}
+                        onBlur={field.handleBlur}
+                        onChange={(e) => field.handleChange(e.target.value)}
+                        disabled={isSavingEdit}
+                        className={cn(
+                          "h-10 border-[#e8e8ea] bg-white",
+                          field.state.meta.errors.length > 0 &&
+                            "border-red-300",
+                        )}
+                      />
+                      {field.state.meta.errors.length > 0 ? (
+                        <p className="text-xs text-red-600">
+                          {String(field.state.meta.errors[0])}
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+                </editUserForm.Field>
+
+                <editUserForm.Field name="is_active">
+                  {(field) => (
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="edit-active"
+                        type="checkbox"
+                        checked={field.state.value}
+                        onChange={(e) => field.handleChange(e.target.checked)}
+                        onBlur={field.handleBlur}
+                        disabled={isSavingEdit}
+                        className="size-4 rounded border-[#e8e8ea] accent-[#0040a1]"
+                      />
+                      <Label htmlFor="edit-active" className="font-normal">
+                        账号启用
+                      </Label>
+                    </div>
+                  )}
+                </editUserForm.Field>
+
               </div>
 
               <DialogFooter>
                 <DialogClose asChild>
-                  <Button type="button" variant="outline" disabled={isSavingEdit}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isSavingEdit}
+                  >
                     取消
                   </Button>
                 </DialogClose>
-                <Button
-                  type="submit"
-                  disabled={isSavingEdit}
-                  className="inline-flex items-center gap-2"
+                <editUserForm.Subscribe
+                  selector={(s) => [s.canSubmit, s.isSubmitting] as const}
                 >
-                  {isSavingEdit ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" aria-hidden />
-                      保存中…
-                    </>
-                  ) : (
-                    "保存"
+                  {([canSubmit, isSubmitting]) => (
+                    <Button
+                      type="submit"
+                      disabled={isSavingEdit || !canSubmit || isSubmitting}
+                      className="inline-flex items-center gap-2"
+                    >
+                      {isSavingEdit || isSubmitting ? (
+                        <>
+                          <Loader2 className="size-4 animate-spin" aria-hidden />
+                          保存中…
+                        </>
+                      ) : (
+                        "保存"
+                      )}
+                    </Button>
                   )}
-                </Button>
+                </editUserForm.Subscribe>
               </DialogFooter>
             </form>
           </DialogContent>
@@ -846,8 +1070,8 @@ export default function AdminDashboard() {
             <DialogHeader>
               <DialogTitle>确认删除</DialogTitle>
               <DialogDescription>
-                确定要删除用户「{deleteTarget?.displayName}」
-                （{deleteTarget?.email}）吗？此操作不可撤销。
+                确定要删除用户「{deleteTarget?.displayName}」 （
+                {deleteTarget?.email}）吗？此操作不可撤销。
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
@@ -870,6 +1094,90 @@ export default function AdminDashboard() {
                   <Loader2 className="size-4 animate-spin" aria-hidden />
                 ) : null}
                 删除
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 重置密码弹窗 */}
+        <Dialog
+          open={!!resetPasswordTarget}
+          onOpenChange={(open) => {
+            if (!open) closeResetPasswordDialog();
+          }}
+        >
+          <DialogContent
+            className="sm:max-w-[425px]"
+            onPointerDownOutside={(ev) => {
+              if (isResettingPassword) ev.preventDefault();
+            }}
+            onEscapeKeyDown={(ev) => {
+              if (isResettingPassword) ev.preventDefault();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>重置密码</DialogTitle>
+              <DialogDescription>
+                为用户「{resetPasswordTarget?.displayName}」（
+                {resetPasswordTarget?.email}
+                ）设置新密码。重置后该用户下次登录时将被提示修改密码。
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-4 py-2">
+              {resetPasswordError ? (
+                <div
+                  className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                  role="alert"
+                >
+                  {resetPasswordError}
+                </div>
+              ) : null}
+              <div className="grid gap-2">
+                <Label htmlFor="reset-password-input">新密码</Label>
+                <Input
+                  id="reset-password-input"
+                  type="password"
+                  autoComplete="new-password"
+                  value={resetPasswordValue}
+                  onChange={(e) => setResetPasswordValue(e.target.value)}
+                  disabled={isResettingPassword}
+                  placeholder="至少 6 位"
+                  className={cn(
+                    "h-10 border-[#e8e8ea] bg-white",
+                    resetPasswordError &&
+                      resetPasswordError.includes("密码") &&
+                      "border-red-300",
+                  )}
+                />
+                <p className="text-xs text-[#424654]">
+                  重置后 <code className="rounded bg-[#f3f3f6] px-1">password_reset_required</code> 将被置为{" "}
+                  <code className="rounded bg-[#f3f3f6] px-1">true</code>，用户登录后会收到修改密码提示。
+                </p>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isResettingPassword}
+                onClick={closeResetPasswordDialog}
+              >
+                取消
+              </Button>
+              <Button
+                type="button"
+                disabled={isResettingPassword || !resetPasswordValue.trim()}
+                className="inline-flex items-center gap-2 bg-amber-500 text-white hover:bg-amber-600"
+                onClick={() => void handleResetPasswordConfirm()}
+              >
+                {isResettingPassword ? (
+                  <Loader2 className="size-4 animate-spin" aria-hidden />
+                ) : (
+                  <KeyRound className="size-4" aria-hidden />
+                )}
+                {isResettingPassword ? "重置中…" : "确认重置"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1035,7 +1343,7 @@ export default function AdminDashboard() {
       </div>
 
       <footer className="mt-16 flex flex-col justify-between gap-4 border-t border-slate-100 pt-8 text-xs text-slate-400 md:flex-row">
-        <p>© {new Date().getFullYear()} 趣学内卷 · 管理端</p>
+        <p>© {new Date().getFullYear()} 微光智造 · 管理端</p>
         <div className="flex flex-wrap gap-6">
           <a href="#" className="hover:text-[#0040a1]">
             系统状态

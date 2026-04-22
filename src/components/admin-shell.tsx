@@ -45,7 +45,7 @@ export default function AdminShell({
             href="/"
             className="text-xl font-bold tracking-tighter text-blue-900 hover:text-blue-700"
           >
-            趣学内卷
+            微光智造
           </Link>
           <p className="mt-1 text-xs text-slate-500">管理后台</p>
         </div>
@@ -94,7 +94,8 @@ export default function AdminShell({
 
           <div className="mt-6 flex items-center gap-3 px-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#e2e2e5] text-sm font-bold text-blue-900">
-              {(currentUser.real_name ?? currentUser.username)?.charAt(0) ?? "A"}
+              {(currentUser.real_name ?? currentUser.username)?.charAt(0) ??
+                "A"}
             </div>
             <div className="min-w-0">
               <p className="truncate text-xs font-bold">

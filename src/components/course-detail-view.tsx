@@ -225,7 +225,7 @@ export default function CourseDetailView({
                     {teacherName}
                   </h4>
                   <p className="text-[#424654] uppercase text-xs tracking-widest mt-1">
-                    趣学内卷 · 认证讲师
+                    微光智造 · 认证讲师
                   </p>
                 </div>
                 <p className="text-[#424654] leading-relaxed">
@@ -397,7 +397,7 @@ export default function CourseDetailView({
       <footer className="bg-slate-50 w-full py-10 md:py-12 border-t border-slate-100 mt-8">
         <div className="max-w-screen-2xl mx-auto px-4 md:px-16 flex flex-col md:flex-row flex-wrap justify-between items-center gap-6">
           <div className="text-sm font-black text-slate-900 uppercase tracking-widest">
-            趣学内卷 · 微课
+            微光智造 · 微课
           </div>
           <div className="flex flex-wrap justify-center gap-6 md:gap-8 text-xs uppercase tracking-widest text-slate-400">
             <Link href="#" className="hover:text-slate-900 transition-colors">
@@ -414,7 +414,7 @@ export default function CourseDetailView({
             </Link>
           </div>
           <div className="text-xs uppercase tracking-widest text-slate-500 opacity-80">
-            © {new Date().getFullYear()} 趣学内卷
+            © {new Date().getFullYear()} 微光智造
           </div>
         </div>
       </footer>

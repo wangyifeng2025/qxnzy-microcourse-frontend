@@ -5,6 +5,7 @@ export interface UserProfile {
   role: string;
   real_name: string;
   avatar_url: string | null;
+  password_reset_required?: boolean;
 }
 
 /** GET /api/users 列表项（管理端分页） */
@@ -49,14 +50,19 @@ export type CreateUserAsAdminOptions = {
   payload: CreateUserPayload;
 };
 
-/** PATCH /api/users/:id — 管理员更新用户 */
+/** PATCH /api/users/:id — 管理员更新用户（不含密码，密码由专用接口处理） */
 export type UpdateUserPayload = {
   email: string;
   role: "Admin" | "Teacher" | "Student";
   real_name: string;
   is_active: boolean;
-  /** 留空表示不修改密码 */
-  password?: string;
+};
+
+/** POST /api/users/:id/reset-password — 管理员重置密码专用请求体 */
+export type AdminResetPasswordOptions = {
+  token: string;
+  userId: string;
+  newPassword: string;
 };
 
 export type UpdateUserAsAdminOptions = {
@@ -164,9 +170,6 @@ export async function updateUserAsAdmin(
     real_name: payload.real_name,
     is_active: payload.is_active,
   };
-  if (payload.password?.trim()) {
-    body.password = payload.password.trim();
-  }
   const res = await fetch(`${API_BASE}/api/users/${encodeURIComponent(userId)}`, {
     method: "PUT",
     headers: {
@@ -216,11 +219,101 @@ export async function deleteUserAsAdmin(
   }
 }
 
+/**
+ * POST /api/users/:id/reset-password — 管理员重置用户密码，需 Bearer。
+ * 成功后后端将 password_reset_required 置为 true。
+ */
+export async function adminResetPassword(
+  options: AdminResetPasswordOptions,
+): Promise<void> {
+  const { token, userId, newPassword } = options;
+  const res = await fetch(
+    `${API_BASE}/api/users/${encodeURIComponent(userId)}/reset-password`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ new_password: newPassword }),
+      cache: "no-store",
+    },
+  );
+  if (!res.ok) {
+    const detail = await parseErrorDetail(res);
+    throw new Error(
+      detail
+        ? `重置密码失败: ${res.status} — ${detail}`
+        : `重置密码失败: ${res.status}`,
+    );
+  }
+}
+
 export async function fetchUser(id: string): Promise<UserProfile> {
   const res = await fetch(`${API_BASE}/api/users/${id}`, {
-    next: { revalidate: 300 }, // cache user info for 5min
+    next: { revalidate: 300 },
   });
   if (res.status === 404) throw new Error("USER_NOT_FOUND");
   if (!res.ok) throw new Error(`获取用户信息失败: ${res.status}`);
   return res.json() as Promise<UserProfile>;
+}
+
+/**
+ * GET /api/users/:id — 带 Bearer 鉴权，获取最新用户 profile（含 password_reset_required）。
+ * 用于页面挂载时校验密码重置状态，不走缓存。
+ */
+export async function fetchUserProfile(
+  token: string,
+  userId: string,
+): Promise<UserProfile> {
+  const res = await fetch(
+    `${API_BASE}/api/users/${encodeURIComponent(userId)}`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    },
+  );
+  if (res.status === 404) throw new Error("USER_NOT_FOUND");
+  if (!res.ok) throw new Error(`获取用户信息失败: ${res.status}`);
+  return res.json() as Promise<UserProfile>;
+}
+
+export type ChangePasswordOptions = {
+  token: string;
+  userId: string;
+  oldPassword: string;
+  newPassword: string;
+};
+
+/**
+ * PUT /api/users/:id/change-password — 用户自行修改密码，需 Bearer。
+ * 成功后后端将 password_reset_required 清除为 false。
+ */
+export async function changePassword(
+  options: ChangePasswordOptions,
+): Promise<void> {
+  const { token, userId, oldPassword, newPassword } = options;
+  const res = await fetch(
+    `${API_BASE}/api/users/${encodeURIComponent(userId)}/change-password`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        old_password: oldPassword,
+        new_password: newPassword,
+      }),
+      cache: "no-store",
+    },
+  );
+  if (!res.ok) {
+    const detail = await parseErrorDetail(res);
+    throw new Error(
+      detail
+        ? `修改密码失败: ${res.status} — ${detail}`
+        : `修改密码失败: ${res.status}`,
+    );
+  }
 }

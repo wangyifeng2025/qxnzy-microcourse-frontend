@@ -910,7 +910,7 @@ export default function AdminMajorsDashboard() {
       </footer>
 
       <div className="mt-12 flex flex-col justify-between gap-4 border-t border-slate-100 pt-8 text-xs text-slate-400 md:flex-row">
-        <p>© {new Date().getFullYear()} 趣学内卷 · 管理端</p>
+        <p>© {new Date().getFullYear()} 微光智造 · 管理端</p>
         <div className="flex flex-wrap gap-6">
           <a href="#" className="hover:text-[#0040a1]">
             系统状态
