@@ -11,9 +11,17 @@ import {
   ArrowRight,
   Zap,
   ExternalLink,
+  MessageCircle,
 } from "lucide-react";
 import TopNav from "@/components/top-nav";
 import { getCoverGradient, type Course } from "@/lib/courses";
+import {
+  discoverTopicHref,
+  type DiscoverPopularCourse,
+  type DiscoverActiveTeacher,
+  type DiscoverLatestTopic,
+} from "@/lib/discover";
+import { formatStudentBadgeCount, formatStudyingCount } from "@/lib/format-enrollment";
 import { cn } from "@/lib/utils";
 
 /* stitch 风格色板近似值 */
@@ -25,25 +33,11 @@ const onSurfaceVariant = "text-[#424654]";
 const primary = "#0040a1";
 const tertiary = "#872200";
 
-const CATEGORY_POOL = [
-  "编程开发",
-  "数据科学",
-  "工程基础",
-  "设计创意",
-  "职业成长",
-  "通识素养",
-];
-
-function categoryForCourse(id: string): string {
-  let n = 0;
-  for (let i = 0; i < id.length; i++) n = (n + id.charCodeAt(i)) % 997;
-  return CATEGORY_POOL[n % CATEGORY_POOL.length];
-}
-
-function pseudoLearners(id: string): number {
-  let n = 0;
-  for (let i = 0; i < id.length; i++) n = (n * 31 + id.charCodeAt(i)) >>> 0;
-  return 20 + (n % 180);
+/** 课程卡片左上角标签：优先接口返回的专业名 */
+function courseBadgeLabel(majorName: string | null | undefined): string {
+  const t = majorName?.trim();
+  if (t) return t;
+  return "微专业";
 }
 
 interface HomeContentProps {
@@ -51,12 +45,111 @@ interface HomeContentProps {
   error: string | null;
   /** 来自 URL `?q=`，与其它页顶栏搜索回车跳转对齐 */
   initialSearchQuery?: string;
+  popularCourses: DiscoverPopularCourse[];
+  activeTeachers: DiscoverActiveTeacher[];
+  latestTopics: DiscoverLatestTopic[];
+  enrollmentByCourseId: Record<string, number>;
+}
+
+function HomeCommunitySidebar({
+  latestTopics,
+  activeTeachers,
+}: {
+  latestTopics: DiscoverLatestTopic[];
+  activeTeachers: DiscoverActiveTeacher[];
+}) {
+  return (
+    <div className={cn("sticky top-24 p-8 rounded-xl", surfaceLow)}>
+      <h3 className="text-xl font-extrabold mb-4 text-[#1a1c1e]">学习社区</h3>
+      <p className="text-sm text-[#424654] mb-6 leading-relaxed">
+        查看最新话题，与讲师和同学交流答疑。
+      </p>
+
+      {latestTopics.length === 0 ? (
+        <p className="mb-8 text-sm text-[#424654]/90">暂无最新话题，快去社区发起讨论吧。</p>
+      ) : (
+        <div className="mb-8 space-y-3">
+          {latestTopics.map((t) => (
+            <Link
+              key={`${t.source}-${t.id}`}
+              href={discoverTopicHref(t)}
+              className="flex items-center gap-3 rounded-lg bg-white p-3 shadow-sm transition hover:shadow-md"
+            >
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#0040a1]/10 text-[#0040a1]">
+                <MessageCircle size={18} strokeWidth={2} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-bold text-[#1a1c1e]">{t.title}</p>
+                <p className="mt-0.5 line-clamp-1 text-[10px] text-[#424654]">
+                  {t.reply_count} 条回复
+                  {t.source === "course" && t.source_title
+                    ? ` · ${t.source_title}`
+                    : " · 独立社区"}
+                </p>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+
+      <Link
+        href="/community"
+        className="flex w-full items-center justify-center gap-2 py-3 text-center text-sm font-bold text-white shadow-sm transition hover:scale-[0.98]"
+        style={{
+          background: `linear-gradient(135deg, ${primary} 0%, #0056d2 100%)`,
+        }}
+      >
+        进入学习社区
+        <ArrowRight size={16} />
+      </Link>
+
+      {activeTeachers.length > 0 ? (
+        <div className="mt-10 border-t border-[#c3c6d6]/30 pt-8">
+          <h4 className="mb-4 text-[10px] font-black uppercase tracking-[0.15em] text-[#424654]/50">
+            活跃讲师
+          </h4>
+          <div className="flex -space-x-2">
+            {activeTeachers.slice(0, 5).map((ins) => {
+              const name = ins.real_name?.trim() || ins.username;
+              const initial = name.charAt(0).toUpperCase() || "?";
+              return (
+                <div
+                  key={ins.user_id}
+                  className="relative size-8 shrink-0 overflow-hidden rounded-full border-2 border-[#eeeef0] bg-[linear-gradient(135deg,#3b82f6_0%,#38bdf8_100%)] text-[10px] font-bold text-white"
+                  title={name}
+                >
+                  {ins.avatar_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={ins.avatar_url} alt="" className="size-full object-cover" />
+                  ) : (
+                    <span className="flex size-full items-center justify-center">{initial}</span>
+                  )}
+                </div>
+              );
+            })}
+            {activeTeachers.length > 5 ? (
+              <div
+                className="flex size-8 shrink-0 items-center justify-center rounded-full border-2 border-[#eeeef0] text-[10px] font-bold text-white"
+                style={{ backgroundColor: "#0056d2" }}
+              >
+                +{activeTeachers.length - 5}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export default function HomeContent({
   courses,
   error,
   initialSearchQuery = "",
+  popularCourses,
+  activeTeachers,
+  latestTopics,
+  enrollmentByCourseId,
 }: HomeContentProps) {
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
   const popularRef = useRef<HTMLDivElement>(null);
@@ -66,8 +159,6 @@ export default function HomeContent({
     [courses],
   );
   const listSource = publishedCourses.length > 0 ? publishedCourses : courses;
-
-  const popularList = useMemo(() => listSource.slice(0, 8), [listSource]);
 
   const filteredCourses = useMemo(() => {
     if (!searchQuery.trim()) return listSource;
@@ -88,6 +179,7 @@ export default function HomeContent({
   return (
     <div className={cn("min-h-screen", surface, onSurface)}>
       <TopNav
+        active="home"
         embeddedSearch={{
           value: searchQuery,
           onChange: setSearchQuery,
@@ -122,16 +214,16 @@ export default function HomeContent({
             </div>
           </div>
 
-          {popularList.length === 0 ? (
+          {popularCourses.length === 0 ? (
             <p className={cn("text-sm pb-8", onSurfaceVariant)}>
-              暂无已发布课程，请稍后再来。
+              暂无热门课程数据，请稍后再试。
             </p>
           ) : (
             <div
               ref={popularRef}
               className="flex gap-6 overflow-x-auto hide-scrollbar pb-8 -mx-4 px-4"
             >
-              {popularList.map((course) => (
+              {popularCourses.map((course) => (
                 <PopularCourseCard key={course.id} course={course} />
               ))}
             </div>
@@ -174,7 +266,11 @@ export default function HomeContent({
             {filteredCourses.length > 0 && (
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-8">
                 {filteredCourses.map((course) => (
-                  <CurriculumCard key={course.id} course={course} />
+                  <CurriculumCard
+                    key={course.id}
+                    course={course}
+                    enrollmentCount={enrollmentByCourseId[course.id] ?? 0}
+                  />
                 ))}
               </div>
             )}
@@ -203,66 +299,11 @@ export default function HomeContent({
             </p>
           </div>
 
-          {/* 加入社区侧栏 */}
           <aside className="hidden xl:block w-80 shrink-0">
-            <div className={cn("sticky top-24 p-8 rounded-xl", surfaceLow)}>
-              <h3 className="text-xl font-extrabold mb-4 text-[#1a1c1e]">
-                加入学习社区
-              </h3>
-              <p className="text-sm text-[#424654] mb-8 leading-relaxed">
-                与数万学习者、讲师在专题小组中交流答疑、互助成长。
-              </p>
-              <div className="space-y-4 mb-8">
-                <div className="flex items-center gap-3 p-3 bg-white rounded-lg shadow-sm">
-                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-bold text-sm">
-                    #
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold">微课设计</p>
-                    <p className="text-[10px] text-[#424654]">1.2 万成员</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 p-3 bg-white rounded-lg shadow-sm">
-                  <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-orange-700 font-bold text-sm">
-                    #
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold">备考与自习</p>
-                    <p className="text-[10px] text-[#424654]">8 千成员</p>
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="w-full py-3 rounded-full font-bold text-sm text-white shadow-sm hover:scale-[0.98] transition-transform"
-                style={{
-                  background: `linear-gradient(135deg, ${primary} 0%, #0056d2 100%)`,
-                }}
-              >
-                进入交流区
-              </button>
-              <div className="mt-12 pt-8 border-t border-[#c3c6d6]/30">
-                <h4 className="text-[10px] font-black uppercase tracking-[0.15em] text-[#424654]/50 mb-4">
-                  活跃讲师
-                </h4>
-                <div className="flex -space-x-2">
-                  {["趣", "学", "卷"].map((ch, i) => (
-                    <div
-                      key={i}
-                      className="w-8 h-8 rounded-full border-2 border-[#eeeef0] bg-linear-to-br from-blue-500 to-sky-400 text-white text-[10px] font-bold flex items-center justify-center"
-                    >
-                      {ch}
-                    </div>
-                  ))}
-                  <div
-                    className="w-8 h-8 rounded-full border-2 border-[#eeeef0] text-[10px] font-bold flex items-center justify-center text-white"
-                    style={{ backgroundColor: "#0056d2" }}
-                  >
-                    +12
-                  </div>
-                </div>
-              </div>
-            </div>
+            <HomeCommunitySidebar
+              latestTopics={latestTopics}
+              activeTeachers={activeTeachers}
+            />
           </aside>
         </section>
       </main>
@@ -297,10 +338,8 @@ export default function HomeContent({
 
 /* ── 热门横滑卡片 ── */
 
-function PopularCourseCard({ course }: { course: Course }) {
-  const cat = categoryForCourse(course.id);
-  const learners = pseudoLearners(course.id);
-  const k = (learners / 1000).toFixed(1);
+function PopularCourseCard({ course }: { course: DiscoverPopularCourse }) {
+  const cat = courseBadgeLabel(course.major_name);
 
   return (
     <div
@@ -327,13 +366,16 @@ function PopularCourseCard({ course }: { course: Course }) {
           style={{ color: tertiary }}
         >
           <Users size={14} className="shrink-0" />
-          {k}k 名学员
+          {formatStudentBadgeCount(course.enrollment_count)}
         </span>
       </div>
       <h3 className="text-xl font-bold mb-2 line-clamp-2">{course.title}</h3>
       <p className={cn("text-sm line-clamp-2 mb-6", onSurfaceVariant)}>
         {course.description?.trim() || "高质量精品微课，系统讲解核心知识点。"}
       </p>
+      {course.teacher_name ? (
+        <p className="mb-4 text-xs text-[#737785]">讲师 · {course.teacher_name}</p>
+      ) : null}
       <div className="flex items-center justify-between">
         <span className="font-bold" style={{ color: primary }}>
           免费
@@ -356,12 +398,17 @@ function PopularCourseCard({ course }: { course: Course }) {
 
 /* ── 网格课程卡片（灰阶封面 + hover） ── */
 
-function CurriculumCard({ course }: { course: Course }) {
+function CurriculumCard({
+  course,
+  enrollmentCount,
+}: {
+  course: Course;
+  enrollmentCount: number;
+}) {
   const gradient = getCoverGradient(course.id);
   const hasCover =
     !!course.cover_image_url && !course.cover_image_url.includes("example.com");
-  const cat = categoryForCourse(course.id);
-  const learning = pseudoLearners(course.id);
+  const cat = courseBadgeLabel(course.major_name);
 
   return (
     <Link
@@ -412,7 +459,7 @@ function CurriculumCard({ course }: { course: Course }) {
           <div className="flex items-center gap-1">
             <Zap size={16} className="text-[#872200]" fill="currentColor" />
             <span className="text-xs font-bold text-[#424654]">
-              {learning} 人正在学
+              {formatStudyingCount(enrollmentCount)}
             </span>
           </div>
           <ExternalLink

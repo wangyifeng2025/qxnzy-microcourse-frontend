@@ -11,6 +11,10 @@ import {
   type Chapter,
   type Video,
 } from "@/lib/courses";
+import {
+  fetchCourseTopicHighlights,
+  type CourseTopicHighlight,
+} from "@/lib/community";
 
 /** 课程可见性随发布状态变化，禁用整页静态缓存，与 fetch no-store 一致 */
 export const dynamic = "force-dynamic";
@@ -51,14 +55,22 @@ export default async function CourseDetailPage({ params }: PageProps) {
     videos: videosPerChapter[i],
   }));
 
+  let topicHighlights: CourseTopicHighlight[] = [];
+  try {
+    topicHighlights = await fetchCourseTopicHighlights(id, { limit: 5 });
+  } catch {
+    /* 侧栏非关键 */
+  }
+
   return (
     <div className="min-h-screen bg-[#f9f9fc]">
-      <TopNav />
+      <TopNav active="courses" />
       <CourseDetailView
         course={course}
         chaptersWithVideos={chaptersWithVideos}
         gradient={gradient}
         hasCover={hasCover}
+        topicHighlights={topicHighlights}
       />
     </div>
   );
@@ -67,7 +79,7 @@ export default async function CourseDetailPage({ params }: PageProps) {
 function ErrorPage() {
   return (
     <div className="min-h-screen bg-[#f9f9fc] flex flex-col">
-      <TopNav />
+      <TopNav active="courses" />
       <div className="flex-1 flex items-center justify-center px-6">
         <div className="text-center">
           <p className="text-[#424654] mb-4">加载课程失败，请稍后重试</p>

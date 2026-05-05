@@ -3,7 +3,9 @@ export interface Course {
   title: string;
   description: string;
   cover_image_url: string | null;
-  major_id: string;
+  major_id: string | null;
+  /** 关联专业的展示名（列表接口 JOIN majors；未关联为空） */
+  major_name?: string | null;
   teacher_id: string;
   teacher_name: string | null;
   status: "Draft" | "Published" | "Archived" | string;
@@ -71,6 +73,30 @@ export async function fetchCourses(
     );
   }
   return res.json() as Promise<CoursesResponse>;
+}
+
+/** 游标拉取已发布课程（公开列表），默认最多 500 条，供目录页聚合展示 */
+export async function fetchAllPublishedCourses(options?: {
+  maxItems?: number;
+  pageSize?: number;
+}): Promise<Course[]> {
+  const maxItems = options?.maxItems ?? 500;
+  const pageSize = Math.min(100, Math.max(20, options?.pageSize ?? 100));
+  const all: Course[] = [];
+  let cursor: { created_at: string; id: string } | undefined;
+
+  while (all.length < maxItems) {
+    const batch = await fetchCourses(
+      Math.min(pageSize, maxItems - all.length),
+      cursor,
+    );
+    all.push(...batch.items);
+    if (!batch.has_more || batch.items.length === 0) break;
+    const last = batch.items[batch.items.length - 1];
+    cursor = { created_at: last.created_at, id: last.id };
+  }
+
+  return all;
 }
 
 export type FetchManageCoursesOptions = {

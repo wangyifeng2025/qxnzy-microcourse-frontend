@@ -88,6 +88,19 @@ export function getUser(): UserInfo | null {
   }
 }
 
+/** 登录 API 返回的 role 可能为 Teacher / Admin 等与后端一致的大小写 */
+export function normalizeUserRole(role: string | undefined | null): string {
+  return String(role ?? "").toLowerCase();
+}
+
+export function userHasAnyRole(
+  role: string | undefined | null,
+  ...expected: string[]
+): boolean {
+  const r = normalizeUserRole(role);
+  return expected.some((e) => e === r);
+}
+
 export function isLoggedIn(): boolean {
   return !!getToken();
 }

@@ -21,6 +21,10 @@ import CourseDetailStats, {
   type CourseEngagementSnapshot,
 } from "@/components/course-detail-stats";
 import CourseEnrollmentCTA from "@/components/course-enrollment-cta";
+import CourseCommunity from "@/components/course-community";
+import {
+  type CourseTopicHighlight,
+} from "@/lib/community";
 import {
   STATUS_LABEL,
   type Chapter,
@@ -43,11 +47,13 @@ export default function CourseDetailView({
   chaptersWithVideos,
   gradient,
   hasCover,
+  topicHighlights = [],
 }: {
   course: Course;
   chaptersWithVideos: ChapterWithVideos[];
   gradient: string;
   hasCover: boolean;
+  topicHighlights?: CourseTopicHighlight[];
 }) {
   const statusInfo = STATUS_LABEL[course.status] ?? STATUS_LABEL.Draft;
   const teacherName = course.teacher_name || "讲师";
@@ -239,9 +245,10 @@ export default function CourseDetailView({
             <h2 className="text-2xl md:text-3xl font-bold text-[#1a1c1e] tracking-tight">
               学习社区
             </h2>
-            <p className="text-[#424654] leading-relaxed">
-              课程讨论区即将开放，届时可与同学、讲师围绕作业与疑难点交流。
-            </p>
+            <CourseCommunity
+              courseId={course.id}
+              courseTeacherId={course.teacher_id}
+            />
           </section>
         </div>
 
@@ -355,31 +362,41 @@ export default function CourseDetailView({
               </span>
             </div>
             <div className="space-y-4">
-              <div className="bg-white p-4 rounded-xl text-sm shadow-sm">
-                <p className="text-[#424654] italic">
-                  「这节的例题讲得特别清楚，已二刷！」
+              {topicHighlights.length === 0 ? (
+                <p className="text-sm leading-relaxed text-[#737785]">
+                  暂无公开讨论精选。下拉至「学习社区」发起或参与话题。
                 </p>
-                <div className="mt-3 flex items-center justify-between text-[10px] font-bold text-[#737785]">
-                  <span>@learner_01</span>
-                  <span className="text-[#0040a1]">3 条回复</span>
-                </div>
-              </div>
-              <div className="bg-white p-4 rounded-xl text-sm shadow-sm">
-                <p className="text-[#424654] italic">
-                  「大纲节奏刚好，适合每天半小时。」
-                </p>
-                <div className="mt-3 flex items-center justify-between text-[10px] font-bold text-[#737785]">
-                  <span>@night_owl</span>
-                  <span className="text-[#0040a1]">1 条回复</span>
-                </div>
-              </div>
+              ) : (
+                topicHighlights.map((t) => (
+                  <Link
+                    key={t.id}
+                    href={`/courses/${course.id}#course-community`}
+                    className="block rounded-xl bg-white p-4 text-sm shadow-sm transition-shadow hover:shadow-md"
+                  >
+                    <p className="line-clamp-2 font-semibold leading-snug text-[#1a1c1e]">
+                      {t.title}
+                    </p>
+                    {t.content_preview.trim() ? (
+                      <p className="mt-2 line-clamp-3 text-[13px] italic text-[#424654]">
+                        「{t.content_preview.trim()}」
+                      </p>
+                    ) : null}
+                    <div className="mt-3 flex items-center justify-between text-[10px] font-bold text-[#737785]">
+                      <span className="truncate pr-2">@{t.author_display}</span>
+                      <span className="shrink-0 text-[#0040a1]">
+                        {t.reply_count} 条回复
+                      </span>
+                    </div>
+                  </Link>
+                ))
+              )}
             </div>
-            <button
-              type="button"
-              className="w-full py-3 rounded-full border border-[#0040a1] text-[#0040a1] font-bold text-sm hover:bg-[#0040a1]/5 transition-colors"
+            <Link
+              href={`/courses/${course.id}#course-community`}
+              className="flex w-full items-center justify-center rounded-full border border-[#0040a1] py-3 text-sm font-bold text-[#0040a1] transition-colors hover:bg-[#0040a1]/5"
             >
               参与讨论
-            </button>
+            </Link>
           </div>
 
           {/* 侧栏快捷 CTA（小屏；与 hero 选课逻辑一致） */}

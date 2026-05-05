@@ -43,7 +43,7 @@ export default function MyLearning() {
 
   return (
     <>
-      <TopNav />
+      <TopNav active="my-learning" />
       <main className="min-h-screen bg-[#f9f9fc]">
         <div className="mx-auto max-w-7xl px-4 py-10 md:px-8 lg:px-16">
           {/* 页头 */}

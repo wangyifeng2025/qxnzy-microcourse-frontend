@@ -43,7 +43,7 @@ export default async function CourseLearnPage({ params }: PageProps) {
 
   return (
     <div className="flex min-h-dvh flex-col bg-[#f9f9fc]">
-      <TopNav />
+      <TopNav active="courses" />
 
       {/* flex-1 + min-h-0：与顶栏占位 h-20 衔接，把剩余视口高度交给学习区（避免旧版 57px 与播放器 h-full 塌陷） */}
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
