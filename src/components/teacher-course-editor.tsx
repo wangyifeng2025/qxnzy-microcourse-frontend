@@ -19,6 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
 import {
   fetchCourse,
@@ -1078,35 +1079,77 @@ export default function TeacherCourseEditor({
                               </Button>
                             </div>
 
-                            {transcodeStatus[v.id] && (
-                              <div className="rounded-xl border border-gray-100 bg-gray-50/60 px-3 py-2">
-                                <div className="flex items-center gap-2 text-xs text-gray-600">
-                                  <span>转码状态：</span>
-                                  <span className="font-medium">
-                                    {transcodeStatus[v.id].video_status}
-                                  </span>
-                                </div>
-                                <div className="mt-1 flex flex-wrap items-center gap-2">
-                                  {transcodeStatus[v.id].transcodes?.map((t) => (
-                                    <span
-                                      key={`${v.id}-${t.resolution}`}
-                                      className={cn(
-                                        "text-[11px] px-2 py-0.5 rounded border",
-                                        t.status === "done"
-                                          ? "bg-green-50 text-green-700 border-green-200"
-                                          : t.status === "processing"
-                                            ? "bg-blue-50 text-blue-700 border-blue-200"
-                                            : t.status === "failed"
-                                              ? "bg-red-50 text-red-700 border-red-200"
-                                              : "bg-gray-100 text-gray-600 border-gray-200",
+                            {transcodeStatus[v.id] && (() => {
+                              const ts = transcodeStatus[v.id];
+                              const items = ts.transcodes ?? [];
+                              const total = items.length || 4;
+                              const doneCount = items.filter((t) => t.status === "done").length;
+                              const processingCount = items.filter((t) => t.status === "processing").length;
+                              const failedCount = items.filter((t) => t.status === "failed").length;
+                              const transcodePercent = Math.round(
+                                ((doneCount + processingCount * 0.5) / total) * 100,
+                              );
+                              const isFailed = ts.video_status?.toLowerCase() === "failed";
+                              return (
+                                <div className="rounded-xl border border-gray-100 bg-gray-50/60 px-3 py-2.5 space-y-2">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                                      {isFailed ? (
+                                        <span className="text-red-600 font-medium">转码失败</span>
+                                      ) : doneCount === total ? (
+                                        <span className="text-green-700 font-medium">转码完成</span>
+                                      ) : (
+                                        <>
+                                          <Loader2 size={12} className="animate-spin text-blue-500 shrink-0" />
+                                          <span>转码中…</span>
+                                        </>
                                       )}
-                                    >
-                                      {t.resolution}: {t.status}
+                                    </div>
+                                    <span className="text-xs font-medium tabular-nums text-gray-500">
+                                      {doneCount}/{total} 路完成
                                     </span>
-                                  ))}
+                                  </div>
+                                  <Progress
+                                    value={isFailed ? 100 : transcodePercent}
+                                    className="h-1.5 bg-gray-100"
+                                    indicatorClassName={cn(
+                                      isFailed
+                                        ? "bg-red-400"
+                                        : doneCount === total
+                                          ? "bg-green-500"
+                                          : "bg-blue-500",
+                                    )}
+                                  />
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    {items.map((t) => (
+                                      <span
+                                        key={`${v.id}-${t.resolution}`}
+                                        className={cn(
+                                          "inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded border",
+                                          t.status === "done"
+                                            ? "bg-green-50 text-green-700 border-green-200"
+                                            : t.status === "processing"
+                                              ? "bg-blue-50 text-blue-700 border-blue-200"
+                                              : t.status === "failed"
+                                                ? "bg-red-50 text-red-700 border-red-200"
+                                                : "bg-gray-100 text-gray-500 border-gray-200",
+                                        )}
+                                      >
+                                        {t.status === "processing" && (
+                                          <Loader2 size={9} className="animate-spin shrink-0" />
+                                        )}
+                                        {t.resolution}
+                                      </span>
+                                    ))}
+                                    {failedCount > 0 && (
+                                      <span className="text-[11px] text-red-500">
+                                        {failedCount} 路转码失败
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              );
+                            })()}
 
                             {editingVideoId === v.id && (
                               <div className="rounded-2xl border border-gray-100 bg-gray-50/40 p-4 space-y-3">
@@ -1261,14 +1304,25 @@ export default function TeacherCourseEditor({
                           </Button>
                         </div>
                         {draft.file && (
-                          <div className="flex items-center gap-2 text-xs text-gray-500 mt-2">
-                            <Upload size={14} />
-                            <span className="truncate">{draft.file.name}</span>
-                            {savedVideo?.id && uploadProgress[savedVideo.id] >= 0 && (
-                              <>
-                                <span className="text-gray-300">·</span>
-                                <span>上传进度 {uploadProgress[savedVideo.id]}%</span>
-                              </>
+                          <div className="mt-2 space-y-1.5">
+                            <div className="flex items-center gap-2 text-xs text-gray-500">
+                              <Upload size={14} className="shrink-0" />
+                              <span className="truncate">{draft.file.name}</span>
+                            </div>
+                            {savedVideo?.id && uploadProgress[savedVideo.id] != null && (
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-xs text-gray-500">
+                                  <span>上传中…</span>
+                                  <span className="font-medium tabular-nums">
+                                    {uploadProgress[savedVideo.id]}%
+                                  </span>
+                                </div>
+                                <Progress
+                                  value={uploadProgress[savedVideo.id]}
+                                  className="h-1.5 bg-gray-100"
+                                  indicatorClassName="bg-blue-500"
+                                />
+                              </div>
                             )}
                           </div>
                         )}

@@ -22,6 +22,7 @@ import CourseDetailStats, {
 } from "@/components/course-detail-stats";
 import CourseEnrollmentCTA from "@/components/course-enrollment-cta";
 import CourseCommunity from "@/components/course-community";
+import CourseStudentExamsBlock from "@/components/course-student-exams-block";
 import {
   type CourseTopicHighlight,
 } from "@/lib/community";
@@ -84,6 +85,7 @@ export default function CourseDetailView({
   const navLinks = [
     { href: "#course-overview", label: "课程概览" },
     { href: "#course-syllabus", label: "课程大纲" },
+    { href: "#course-exams", label: "课程测试" },
     { href: "#course-instructor", label: "讲师" },
     { href: "#course-community", label: "社区" },
   ];
@@ -212,6 +214,23 @@ export default function CourseDetailView({
             <div className="rounded-xl bg-white p-4 shadow-sm border border-[#c3c6d6]/15">
               <ChapterList chapters={chaptersWithVideos} />
             </div>
+          </section>
+
+          <section
+            className="space-y-4 scroll-mt-32"
+            id="course-exams"
+            aria-labelledby="course-exams-heading"
+          >
+            <h2
+              id="course-exams-heading"
+              className="text-2xl md:text-3xl font-bold text-[#1a1c1e] tracking-tight"
+            >
+              课程测试
+            </h2>
+            <p className="text-sm text-[#424654]">
+              已选课学员可参加教师已发布的测验；答卷在学习页也可从侧栏进入。
+            </p>
+            <CourseStudentExamsBlock courseId={course.id} variant="light" />
           </section>
 
           <section

@@ -170,6 +170,15 @@ export default function CourseEnrollmentCTA({
         >
           继续学习
         </Link>
+        <Link
+          href={`/courses/${courseId}#course-exams`}
+          className={cn(
+            "inline-flex items-center justify-center rounded-full border-2 border-[#0040a1] px-5 py-3 text-sm font-bold text-[#0040a1] transition-colors hover:bg-[#0040a1]/5",
+            !isHero && "w-full py-3.5",
+          )}
+        >
+          课程测试
+        </Link>
         <button
           type="button"
           disabled={busy}

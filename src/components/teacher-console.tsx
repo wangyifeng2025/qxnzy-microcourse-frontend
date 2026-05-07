@@ -17,6 +17,8 @@ import {
   LineChart,
   Star,
   ArrowLeft,
+  ClipboardPen,
+  ScrollText,
 } from "lucide-react";
 import { getToken, getUser, type UserInfo } from "@/lib/auth";
 import {
@@ -26,6 +28,7 @@ import {
 } from "@/lib/courses";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { fetchEnrollmentCount } from "@/lib/course-enrollment";
 
 const surface = "bg-[#f9f9fc]";
 const primary = "#0040a1";
@@ -33,7 +36,7 @@ const tertiary = "#872200";
 
 /** 表头与课程行共用列模板（仅 md+ 生效），保证四列对齐 */
 const courseTableCols =
-  "md:grid-cols-[minmax(0,1fr)_5.5rem_5.5rem_minmax(13.5rem,auto)] md:gap-x-6";
+  "md:grid-cols-[minmax(0,1fr)_6.5rem_7rem_minmax(19rem,auto)] md:gap-x-6";
 const courseTableGridRow = cn(
   "grid grid-cols-1 gap-y-4 md:grid md:gap-y-0",
   courseTableCols,
@@ -87,13 +90,6 @@ async function patchCourseStatusApi(
   }
 }
 
-function categoryTag(id: string): string {
-  const pool = ["精品微课", "通识", "专业进阶", "实战"];
-  let n = 0;
-  for (let i = 0; i < id.length; i++) n += id.charCodeAt(i);
-  return pool[n % pool.length];
-}
-
 export default function TeacherConsole() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [courses, setCourses] = useState<Course[] | null>(null);
@@ -104,6 +100,10 @@ export default function TeacherConsole() {
     null,
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [enrollmentByCourseId, setEnrollmentByCourseId] = useState<
+    Record<string, number>
+  >({});
+  const [enrollmentCountsLoading, setEnrollmentCountsLoading] = useState(false);
 
   useEffect(() => {
     setUser(getUser());
@@ -158,6 +158,39 @@ export default function TeacherConsole() {
         (c.description?.toLowerCase().includes(q) ?? false),
     );
   }, [myCourses, searchQuery]);
+
+  useEffect(() => {
+    const token = getToken();
+    if (!token || myCourses.length === 0) {
+      setEnrollmentByCourseId({});
+      setEnrollmentCountsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setEnrollmentCountsLoading(true);
+    void (async () => {
+      try {
+        const entries = await Promise.all(
+          myCourses.map(async (c) => {
+            try {
+              const res = await fetchEnrollmentCount(token, c.id);
+              return [c.id, res.enrollment_count] as const;
+            } catch {
+              return [c.id, 0] as const;
+            }
+          }),
+        );
+        if (!cancelled) {
+          setEnrollmentByCourseId(Object.fromEntries(entries));
+        }
+      } finally {
+        if (!cancelled) setEnrollmentCountsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [myCourses]);
 
   const publishedCount = myCourses.filter(
     (c) => String(c.status).toLowerCase() === "published",
@@ -378,15 +411,23 @@ export default function TeacherConsole() {
 
             <div
               className={cn(
-                "hidden rounded-t-xl bg-[#f3f3f6] px-4 py-3 text-[10px] font-bold uppercase tracking-widest text-[#424654] md:grid md:px-6",
+                "hidden rounded-t-xl border border-[#c3c6d6]/20 border-b-0 bg-[#e8eaef]/70 md:grid md:px-6 md:py-3.5",
                 courseTableCols,
-                "md:items-end",
+                "md:items-center",
               )}
             >
-              <div className="min-w-0">课程信息</div>
-              <div className="text-center">状态</div>
-              <div className="text-center">学员数</div>
-              <div className="text-right">操作</div>
+              <div className="min-w-0 pl-0 text-sm font-semibold tracking-tight text-[#1a1c1e]">
+                课程信息
+              </div>
+              <div className="justify-self-center text-center text-sm font-semibold tracking-tight text-[#1a1c1e]">
+                状态
+              </div>
+              <div className="justify-self-center text-center text-sm font-semibold tracking-tight text-[#1a1c1e]">
+                学员数
+              </div>
+              <div className="justify-self-end text-right text-sm font-semibold tracking-tight text-[#1a1c1e]">
+                操作
+              </div>
             </div>
 
             {loading && (
@@ -436,7 +477,7 @@ export default function TeacherConsole() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <span className="text-[10px] font-bold uppercase tracking-widest text-[#0040a1]">
-                          {categoryTag(c.id)}
+                          {c.major_name?.trim() || "未关联专业"}
                         </span>
                         <h3 className="text-lg font-bold tracking-tight text-[#1a1c1e] transition-colors group-hover:text-[#0040a1]">
                           {c.title}
@@ -448,7 +489,7 @@ export default function TeacherConsole() {
                     </div>
 
                     {/* 列 2：状态 — 与表头「状态」列同宽 */}
-                    <div className="flex items-center justify-between border-t border-[#eeeef0] pt-3 md:justify-self-center md:border-0 md:pt-0">
+                    <div className="flex items-center justify-between border-t border-[#eeeef0] pt-3 md:flex md:justify-center md:justify-self-center md:border-0 md:pt-0">
                       <span className="text-xs text-[#424654] md:hidden">
                         状态
                       </span>
@@ -462,60 +503,96 @@ export default function TeacherConsole() {
                       </span>
                     </div>
 
-                    {/* 列 3：学员数 */}
-                    <div className="flex items-center justify-between border-t border-[#eeeef0] pt-3 md:justify-self-center md:border-0 md:pt-0">
+                    {/* 列 3：学员数（选课人数） */}
+                    <div className="flex items-center justify-between border-t border-[#eeeef0] pt-3 md:flex md:justify-center md:justify-self-center md:border-0 md:pt-0">
                       <span className="text-xs text-[#424654] md:hidden">
                         学员数
                       </span>
                       <div className="text-right md:text-center">
                         <span className="text-lg font-bold leading-none text-[#1a1c1e]">
-                          —
+                          {enrollmentCountsLoading
+                            ? "…"
+                            : (enrollmentByCourseId[c.id] ?? "—")}
                         </span>
                         <p className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-[#424654]">
-                          待统计
+                          {enrollmentCountsLoading ? "加载中" : "选课人数"}
                         </p>
                       </div>
                     </div>
 
                     {/* 列 4：操作 */}
-                    <div className="flex flex-wrap items-center justify-end gap-1 border-t border-[#eeeef0] pt-3 md:justify-self-end md:border-0 md:pt-0">
+                    <div className="flex flex-wrap items-center justify-end gap-x-0.5 gap-y-1 border-t border-[#eeeef0] pt-3 md:justify-self-end md:gap-x-1 md:border-0 md:pt-0">
                       <span className="mr-auto text-xs text-[#424654] md:hidden">
                         操作
                       </span>
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="text-slate-400 hover:bg-[#0040a1]/5 hover:text-[#0040a1]"
+                        size="sm"
+                        className="h-8 gap-1 px-2 text-xs font-medium text-[#424654] hover:bg-[#0040a1]/10 hover:text-[#0040a1]"
                         asChild
                       >
-                        <Link href={`/courses/${c.id}`} aria-label="预览">
-                          <Eye size={18} />
+                        <Link
+                          href={`/courses/${c.id}`}
+                          title="在前台预览该课程的公开页面"
+                        >
+                          <Eye className="size-3.5 shrink-0" aria-hidden />
+                          <span>预览</span>
                         </Link>
                       </Button>
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="text-slate-400 hover:bg-[#0040a1]/5 hover:text-[#0040a1]"
+                        size="sm"
+                        className="h-8 gap-1 px-2 text-xs font-medium text-[#424654] hover:bg-[#0040a1]/10 hover:text-[#0040a1]"
                         asChild
                       >
                         <Link
                           href={`/teacher/courses/${c.id}`}
-                          aria-label="编辑章节与视频"
+                          title="编辑章节、视频与排序"
                         >
-                          <Pencil size={18} />
+                          <Pencil className="size-3.5 shrink-0" aria-hidden />
+                          <span>大纲</span>
                         </Link>
                       </Button>
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="hidden text-slate-400 hover:bg-[#0040a1]/5 hover:text-[#0040a1] md:inline-flex"
+                        size="sm"
+                        className="h-8 gap-1 px-2 text-xs font-medium text-[#424654] hover:bg-[#0040a1]/10 hover:text-[#0040a1]"
+                        asChild
+                      >
+                        <Link
+                          href={`/teacher/courses/${c.id}/questions`}
+                          title="管理该课程的题库与试题"
+                        >
+                          <ClipboardPen className="size-3.5 shrink-0" aria-hidden />
+                          <span>出题</span>
+                        </Link>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 gap-1 px-2 text-xs font-medium text-[#424654] hover:bg-[#0040a1]/10 hover:text-[#0040a1]"
+                        asChild
+                      >
+                        <Link
+                          href={`/teacher/courses/${c.id}/exams`}
+                          title="出卷、组题与发布试卷"
+                        >
+                          <ScrollText className="size-3.5 shrink-0" aria-hidden />
+                          <span>试卷</span>
+                        </Link>
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="hidden h-8 gap-1 px-2 text-xs font-medium text-[#424654] hover:bg-[#0040a1]/10 hover:text-[#0040a1] md:inline-flex"
                         asChild
                       >
                         <Link
                           href={`/teacher/courses/${c.id}/info`}
-                          aria-label="编辑课程信息"
+                          title="编辑标题、封面、简介与专业"
                         >
-                          <ImagePlus size={18} />
+                          <ImagePlus className="size-3.5 shrink-0" aria-hidden />
+                          <span>资料</span>
                         </Link>
                       </Button>
                       {!isCoursePublished(c.status) && (
@@ -523,8 +600,9 @@ export default function TeacherConsole() {
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="gap-1 text-green-700 hover:bg-green-50"
+                          className="h-8 gap-1 px-2 text-xs font-medium text-green-700 hover:bg-green-50"
                           disabled={!!courseStatusBusyId || loading}
+                          title="将课程设为已发布，学员可在前台看到"
                           onClick={() => void publishCourse(c.id)}
                         >
                           {courseStatusBusyId === c.id ? (
@@ -532,7 +610,7 @@ export default function TeacherConsole() {
                           ) : (
                             <Rocket size={14} />
                           )}
-                          <span className="hidden sm:inline">发布</span>
+                          <span>发布</span>
                         </Button>
                       )}
                       {isCoursePublished(c.status) && (
@@ -540,8 +618,9 @@ export default function TeacherConsole() {
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="gap-1 text-amber-800 hover:bg-amber-50"
+                          className="h-8 gap-1 px-2 text-xs font-medium text-amber-800 hover:bg-amber-50"
                           disabled={!!courseStatusBusyId || loading}
+                          title="取消发布后课程将变为草稿"
                           onClick={() => void unpublishCourse(c.id)}
                         >
                           {courseStatusBusyId === c.id ? (
@@ -549,17 +628,18 @@ export default function TeacherConsole() {
                           ) : (
                             <Undo2 size={14} />
                           )}
-                          <span className="hidden sm:inline">取消发布</span>
+                          <span>取消发布</span>
                         </Button>
                       )}
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="text-slate-400 hover:bg-red-50 hover:text-red-600"
+                        size="sm"
+                        className="h-8 gap-1 px-2 text-xs font-medium text-[#424654] hover:bg-red-50 hover:text-red-600"
                         onClick={() => void deleteCourse(c.id)}
-                        aria-label="删除"
+                        title="永久删除该课程（不可恢复）"
                       >
-                        <Trash2 size={18} />
+                        <Trash2 className="size-3.5 shrink-0" aria-hidden />
+                        <span>删除</span>
                       </Button>
                     </div>
 
@@ -569,6 +649,18 @@ export default function TeacherConsole() {
                         <Link href={`/teacher/courses/${c.id}/info`}>
                           <ImagePlus size={14} />
                           课程信息
+                        </Link>
+                      </Button>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/teacher/courses/${c.id}/exams`}>
+                          <ScrollText size={14} />
+                          试卷
+                        </Link>
+                      </Button>
+                      <Button variant="outline" size="sm" asChild>
+                        <Link href={`/teacher/courses/${c.id}/questions`}>
+                          <ClipboardPen size={14} />
+                          出题
                         </Link>
                       </Button>
                       <Button variant="outline" size="sm" asChild>

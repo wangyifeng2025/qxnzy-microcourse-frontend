@@ -20,6 +20,7 @@ import {
   fetchEnrollmentStatus,
   unenrollCourse,
 } from "@/lib/course-enrollment";
+import CourseStudentExamsBlock from "@/components/course-student-exams-block";
 import VideoPlayer from "@/components/video-player";
 
 interface ChapterWithVideos extends Chapter {
@@ -153,6 +154,7 @@ export default function CourseLearning({
 
           {/* 章节列表 */}
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <CourseStudentExamsBlock courseId={courseId} variant="dark" />
             <ol className="space-y-px p-2">
               {chapters.map((chapter) => {
                 const isCollapsed = collapsed[chapter.id] ?? false;
